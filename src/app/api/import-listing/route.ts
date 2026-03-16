@@ -51,38 +51,44 @@ const SUPPORTED_DOMAINS = [
 // ---------------------------------------------------------------------------
 
 const FUEL_MAP: Record<string, FuelType> = {
-  benzin: 'benzin', petrol: 'benzin', gasoline: 'benzin',
-  dizel: 'dizel', diesel: 'dizel',
-  plin: 'plin', lpg: 'plin', 'tng / cng': 'plin', gas: 'plin',
-  'benzin+plin': 'benzin+plin', 'benzin + plin': 'benzin+plin',
-  hibrid: 'hibrid', hybrid: 'hibrid', 'plug-in hybrid': 'hibrid', 'plug-in hibrid': 'hibrid',
-  elektricni: 'elektricni', 'električni': 'elektricni', electric: 'elektricni', elektro: 'elektricni',
+  benzin: 'benzin', petrol: 'benzin', gasoline: 'benzin', unleaded: 'benzin',
+  dizel: 'dizel', diesel: 'dizel', nafta: 'dizel',
+  plin: 'plin', lpg: 'plin', 'tng / cng': 'plin', gas: 'plin', cng: 'plin', tng: 'plin', 'methan': 'plin',
+  'benzin+plin': 'benzin+plin', 'benzin + plin': 'benzin+plin', 'benzin/plin': 'benzin+plin',
+  hibrid: 'hibrid', hybrid: 'hibrid', 'plug-in hybrid': 'hibrid', 'plug-in hibrid': 'hibrid', phev: 'hibrid', mhev: 'hibrid',
+  elektricni: 'elektricni', 'električni': 'elektricni', electric: 'elektricni', elektro: 'elektricni', ev: 'elektricni', 'struja': 'elektricni',
 };
 
 const TRANSMISSION_MAP: Record<string, TransmissionType> = {
-  manuelni: 'manuelni', manuelno: 'manuelni', manual: 'manuelni', 'ručni': 'manuelni',
-  automatski: 'automatski', automatik: 'automatski', automatic: 'automatski',
-  tiptronic: 'automatski', dsg: 'automatski', cvt: 'automatski',
-  poluautomatski: 'poluautomatski', poluautomatik: 'poluautomatski',
+  manuelni: 'manuelni', manuelno: 'manuelni', manual: 'manuelni', 'ručni': 'manuelni', rucni: 'manuelni', 'manualni': 'manuelni',
+  automatski: 'automatski', automatik: 'automatski', automatic: 'automatski', auto: 'automatski',
+  tiptronic: 'automatski', dsg: 'automatski', cvt: 'automatski', 'at': 'automatski', 's-tronic: ': 'automatski',
+  's tronic': 'automatski', 's-tronic': 'automatski', 'e-cvt': 'automatski', 'steptronic': 'automatski',
+  'pdk': 'automatski', 'multitronic': 'automatski', 'powershift': 'automatski', 'edc': 'automatski',
+  poluautomatski: 'poluautomatski', poluautomatik: 'poluautomatski', 'polu-automatski': 'poluautomatski', 'semi-automatic': 'poluautomatski',
+  'robotizovani': 'poluautomatski', 'robotiziran': 'poluautomatski', 'sekvencijalni': 'poluautomatski',
 };
 
 const BODY_MAP: Record<string, BodyType> = {
-  limuzina: 'limuzina', sedan: 'limuzina',
-  karavan: 'karavan', estate: 'karavan', wagon: 'karavan', kombi: 'karavan',
-  hatchback: 'hatchback', 'hečbek': 'hatchback',
-  suv: 'SUV', terenac: 'SUV', 'džip': 'SUV', 'suv / terensko vozilo': 'SUV',
-  coupe: 'coupe', 'kupé': 'coupe', kupe: 'coupe',
-  cabrio: 'cabrio', kabriolet: 'cabrio',
-  pickup: 'pickup',
-  monovolumen: 'monovolumen', minivan: 'monovolumen',
+  limuzina: 'limuzina', sedan: 'limuzina', saloon: 'limuzina',
+  karavan: 'karavan', estate: 'karavan', wagon: 'karavan', kombi: 'karavan', 'station wagon': 'karavan',
+  hatchback: 'hatchback', 'hečbek': 'hatchback', hecbek: 'hatchback',
+  suv: 'SUV', terenac: 'SUV', 'džip': 'SUV', dzip: 'SUV', 'suv / terensko vozilo': 'SUV', 'terensko vozilo': 'SUV', crossover: 'SUV',
+  coupe: 'coupe', 'kupé': 'coupe', kupe: 'coupe', 'sportski/kupe': 'coupe', 'sportski / kupe': 'coupe', 'sportski/coupe': 'coupe', sportski: 'coupe',
+  cabrio: 'cabrio', kabriolet: 'cabrio', cabriolet: 'cabrio', roadster: 'cabrio',
+  pickup: 'pickup', 'pick-up': 'pickup', pikap: 'pickup',
+  monovolumen: 'monovolumen', minivan: 'monovolumen', van: 'monovolumen', mpv: 'monovolumen',
+  'malo auto': 'hatchback', 'gradski auto': 'hatchback', 'city car': 'hatchback',
 };
 
 const DRIVE_MAP: Record<string, DriveType> = {
-  prednji: 'prednji', fwd: 'prednji',
-  zadnji: 'zadnji', rwd: 'zadnji',
-  'sva četiri': 'sva-cetiri', 'sva cetiri': 'sva-cetiri',
-  '4x4': 'sva-cetiri', awd: 'sva-cetiri', '4wd': 'sva-cetiri',
-  '4motion': 'sva-cetiri', xdrive: 'sva-cetiri', quattro: 'sva-cetiri',
+  prednji: 'prednji', fwd: 'prednji', 'front wheel drive': 'prednji', 'prednji pogon': 'prednji',
+  zadnji: 'zadnji', rwd: 'zadnji', 'rear wheel drive': 'zadnji', 'zadnji pogon': 'zadnji',
+  'sva četiri': 'sva-cetiri', 'sva cetiri': 'sva-cetiri', 'sva 4': 'sva-cetiri',
+  '4x4': 'sva-cetiri', awd: 'sva-cetiri', '4wd': 'sva-cetiri', 'all wheel drive': 'sva-cetiri',
+  '4motion': 'sva-cetiri', xdrive: 'sva-cetiri', quattro: 'sva-cetiri', 'all4': 'sva-cetiri',
+  '4matic': 'sva-cetiri', 'e-4motion': 'sva-cetiri', 'inteligentni 4x4': 'sva-cetiri',
+  'stalni pogon': 'sva-cetiri', 'stalni pogon na sva 4': 'sva-cetiri',
 };
 
 function matchFuel(raw: string): FuelType | undefined {
