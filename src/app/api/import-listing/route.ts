@@ -519,6 +519,66 @@ function parseAutoBum(html: string, url: string): ParsedListing {
     parseFromMetaTags(html, listing);
   }
 
+  // AutoBum embeds article data in React Server Component chunks with escaped quotes
+  // Format: \"transmission\":\"Manuelni\",\"equipment\":[\"item1\",\"item2\"]
+  
+  // Extract transmission (escaped quotes in RSC)
+  const transMatch = html.match(/\\"transmission\\":\\"([^\\]+)\\"/);
+  if (transMatch && !listing.transmission) {
+    listing.transmission = matchTransmission(transMatch[1]);
+  }
+
+  // Extract equipment array (escaped format)
+  const equipMatch = html.match(/\\"equipment\\":\[([^\]]+)\]/);
+  if (equipMatch && (!listing.equipment || listing.equipment.length === 0)) {
+    const raw = equipMatch[1];
+    listing.equipment = raw.split(',')
+      .map((s: string) => s.replace(/\\"/g, '').replace(/"/g, '').trim())
+      .filter(Boolean);
+  }
+
+  // Extract RSC fields with escaped quotes
+  const rscFields: Record<string, RegExp> = {
+    year: /\\"year\\":\\"(\d+)\\"/,
+    mileage: /\\"mileage\\":\\"(\d+)\\"/,
+    fuel: /\\"fuel\\":\\"([^\\]+)\\"/,
+    power_kw: /\\"power_kw\\":\\"(\d+)\\"/,
+    power_hp: /\\"power_hp\\":\\"(\d+)\\"/,
+    capacity: /\\"capacity\\":\\"([^\\]+)\\"/,
+  };
+
+  for (const [field, regex] of Object.entries(rscFields)) {
+    const m = html.match(regex);
+    if (m) {
+      switch (field) {
+        case 'year': if (!listing.year) listing.year = parseInt(m[1]); break;
+        case 'mileage': if (!listing.mileage) listing.mileage = parseInt(m[1]); break;
+        case 'fuel': if (!listing.fuel) listing.fuel = matchFuel(m[1]); break;
+        case 'power_kw': if (!listing.power) listing.power = parseInt(m[1]); break;
+        case 'power_hp': if (!listing.powerHP) listing.powerHP = parseInt(m[1]); break;
+        case 'capacity': if (!listing.engineSize) listing.engineSize = parseEngineSize(m[1]); break;
+      }
+    }
+  }
+
+  // Extract Klima from RSC
+  const klimaMatch = html.match(/\\"Klima\\":\\"([^\\]+)\\"/);
+  if (klimaMatch && listing.equipment) {
+    listing.equipment.push(`Klima ${klimaMatch[1]}`);
+  }
+
+  // Extract title from <title> tag: "Auto Bum | Audi A3 Dizel 2011 1.6 66kw (UVOZ)"
+  const titleMatch = html.match(/<title[^>]*>Auto Bum \| ([^<]+)<\/title>/);
+  if (titleMatch && !listing.title) {
+    listing.title = titleMatch[1].trim();
+  }
+
+  // Extract location/city from RSC
+  const cityMatch = html.match(/\\"city\\":\\"([^\\]+)\\"/);
+  if (cityMatch && !listing.city) {
+    listing.city = cityMatch[1];
+  }
+
   // AutoBum puts structured data in og:description: "Audi, A3, 2011, Dizel (Euro5), 1.6, 66 KW (89 KS), 271000 km"
   const ogDesc = getMetaContent(html, 'og:description');
   if (ogDesc) {
