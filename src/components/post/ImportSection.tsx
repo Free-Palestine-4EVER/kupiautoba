@@ -15,9 +15,10 @@ import {
 
 interface ImportSectionProps {
   onImportSuccess?: (data: Record<string, unknown>) => void;
+  onJumpToStep?: (step: number) => void;
 }
 
-export default function ImportSection({ onImportSuccess }: ImportSectionProps) {
+export default function ImportSection({ onImportSuccess, onJumpToStep }: ImportSectionProps) {
   const [url, setUrl] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
@@ -44,9 +45,15 @@ export default function ImportSection({ onImportSuccess }: ImportSectionProps) {
       }
 
       const data = await response.json();
-      setStatus("success");
-      setMessage("Oglas je uspjesno uvezen! Provjerite i dopunite podatke.");
-      onImportSuccess?.(data);
+      if (data.success && data.listing) {
+        setStatus("success");
+        setMessage("Oglas je uspjesno uvezen! Provjerite i dopunite podatke.");
+        onImportSuccess?.(data.listing);
+        // Jump to vehicle info step so user sees populated fields
+        setTimeout(() => onJumpToStep?.(1), 500);
+      } else {
+        throw new Error(data.error || "Nepoznata greška");
+      }
     } catch {
       setStatus("error");
       setMessage(

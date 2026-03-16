@@ -70,6 +70,7 @@ const STEP_FIELDS: Record<number, (keyof ListingFormData)[]> = {
 export default function ObjaviPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [photos, setPhotos] = useState<File[]>([]);
+  const [importedPhotoUrls, setImportedPhotoUrls] = useState<string[]>([]);
   const [equipment, setEquipment] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [direction, setDirection] = useState(1);
@@ -170,11 +171,14 @@ export default function ObjaviPage() {
         sellerPhone: formData.showPhone ? formData.contactPhone : undefined,
       }, user.uid);
 
-      // Upload photos if any
+      // Upload photos if any, or use imported URLs
       if (photos.length > 0) {
         const photoUrls = await uploadListingImages(photos, listingId);
         const { updateListing } = await import('@/lib/firestore');
         await updateListing(listingId, { photos: photoUrls });
+      } else if (importedPhotoUrls.length > 0) {
+        const { updateListing } = await import('@/lib/firestore');
+        await updateListing(listingId, { photos: importedPhotoUrls });
       }
 
       router.push(`/oglas/${listingId}`);
@@ -202,9 +206,21 @@ export default function ObjaviPage() {
       if (data.description) setValue("description", data.description as string);
       if (data.equipment) setEquipment(data.equipment as string[]);
       if (data.city) setValue("contactCity", data.city as string);
+      if (data.currency) setValue("currency", data.currency as "KM" | "EUR");
+      if (data.negotiable) setValue("negotiable", data.negotiable as boolean);
+      // Store imported photo URLs
+      if (data.photos && Array.isArray(data.photos) && (data.photos as string[]).length > 0) {
+        setImportedPhotoUrls(data.photos as string[]);
+      }
     },
     [setValue]
   );
+
+  const handleJumpToStep = useCallback((step: number) => {
+    setDirection(1);
+    setCurrentStep(step);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
 
   const slideVariants = {
     enter: (dir: number) => ({ x: dir > 0 ? 80 : -80, opacity: 0 }),
@@ -242,7 +258,7 @@ export default function ObjaviPage() {
           <p className="text-sm sm:text-base text-[var(--muted-foreground)] mt-2">Popunite podatke o vasem vozilu i objavite oglas na KupiAuto.ba</p>
         </motion.div>
 
-        <ImportSection onImportSuccess={handleImportSuccess} />
+        <ImportSection onImportSuccess={handleImportSuccess} onJumpToStep={handleJumpToStep} />
 
         <StepIndicator currentStep={currentStep} totalSteps={TOTAL_STEPS} steps={STEPS} />
 
