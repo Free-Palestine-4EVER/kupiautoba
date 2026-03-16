@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Search } from "lucide-react";
-import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { useRouter } from "next/navigation";
+import { parseSearchQuery } from "@/lib/search-parser";
+import { SearchFilters } from "@/types";
 
 const quickFilters = ["Volkswagen", "BMW", "Audi", "Mercedes", "Opel"];
 
@@ -54,8 +56,48 @@ function AnimatedCounter({
   );
 }
 
+function filtersToParams(filters: SearchFilters): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+  return params.toString();
+}
+
 export default function HeroSection() {
   const [searchQuery, setSearchQuery] = useState("");
+  const router = useRouter();
+
+  const handleSearch = useCallback(() => {
+    if (!searchQuery.trim()) {
+      router.push("/oglasi");
+      return;
+    }
+
+    const filters = parseSearchQuery(searchQuery);
+    const paramString = filtersToParams(filters);
+    router.push(`/oglasi${paramString ? `?${paramString}` : ""}`);
+  }, [searchQuery, router]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Enter") {
+        handleSearch();
+      }
+    },
+    [handleSearch]
+  );
+
+  const handleQuickFilter = useCallback(
+    (brand: string) => {
+      const params = new URLSearchParams();
+      params.set("make", brand);
+      router.push(`/oglasi?${params.toString()}`);
+    },
+    [router]
+  );
 
   return (
     <section className="relative min-h-[85vh] flex items-center justify-center overflow-hidden">
@@ -131,15 +173,16 @@ export default function HeroSection() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder="BMW X5 do 50000km, cijena do 30000 KM..."
               className="flex-1 px-4 py-4 text-navy-500 text-lg placeholder:text-gray-400 bg-transparent outline-none"
             />
-            <Link
-              href={`/oglasi${searchQuery ? `?query=${encodeURIComponent(searchQuery)}` : ""}`}
+            <button
+              onClick={handleSearch}
               className="bg-accent-500 hover:bg-accent-600 text-white font-semibold px-8 py-4 rounded-xl transition-all duration-200 hover:shadow-lg hover:shadow-accent-500/25 active:scale-[0.98] flex-shrink-0"
             >
               Pretrazi
-            </Link>
+            </button>
           </div>
         </motion.div>
 
@@ -151,9 +194,9 @@ export default function HeroSection() {
           transition={{ duration: 0.8, delay: 0.6, ease: "easeOut" }}
         >
           {quickFilters.map((brand) => (
-            <Link
+            <button
               key={brand}
-              href={`/oglasi?make=${encodeURIComponent(brand)}`}
+              onClick={() => handleQuickFilter(brand)}
               className={cn(
                 "px-5 py-2.5 rounded-full text-sm font-medium transition-all duration-200",
                 "bg-white/10 text-white/90 border border-white/20",
@@ -162,7 +205,7 @@ export default function HeroSection() {
               )}
             >
               {brand}
-            </Link>
+            </button>
           ))}
         </motion.div>
 

@@ -1,11 +1,13 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { ArrowRight, Sparkles, Loader2 } from "lucide-react";
 import Link from "next/link";
 import ListingCard from "@/components/ui/ListingCard";
+import { getListings } from "@/lib/firestore";
 import { mockListings } from "@/lib/mock-data";
-
+import { Listing } from "@/types";
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -25,8 +27,38 @@ const itemVariants = {
 } as const;
 
 export default function FeaturedListings() {
-  // Take 8 listings for featured (2 rows of 4)
-  const featured = mockListings.slice(0, 8);
+  const [featured, setFeatured] = useState<Listing[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchListings() {
+      try {
+        const { listings } = await getListings({}, "newest", 8);
+        if (!cancelled) {
+          if (listings.length > 0) {
+            setFeatured(listings);
+          } else {
+            setFeatured(mockListings.slice(0, 8));
+          }
+        }
+      } catch {
+        if (!cancelled) {
+          setFeatured(mockListings.slice(0, 8));
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    fetchListings();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <section className="py-16 md:py-24 bg-[var(--muted)]">
@@ -57,19 +89,25 @@ export default function FeaturedListings() {
           </Link>
         </motion.div>
 
-        <motion.div
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
-          variants={containerVariants}
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-80px" }}
-        >
-          {featured.map((listing) => (
-            <motion.div key={listing.id} variants={itemVariants}>
-              <ListingCard listing={listing} />
-            </motion.div>
-          ))}
-        </motion.div>
+        {loading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-8 h-8 text-accent-500 animate-spin" />
+          </div>
+        ) : (
+          <motion.div
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5"
+            variants={containerVariants}
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-80px" }}
+          >
+            {featured.map((listing) => (
+              <motion.div key={listing.id} variants={itemVariants}>
+                <ListingCard listing={listing} />
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
 
         <div className="sm:hidden text-center mt-8">
           <Link
