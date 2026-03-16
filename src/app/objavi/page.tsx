@@ -192,22 +192,43 @@ export default function ObjaviPage() {
 
   const handleImportSuccess = useCallback(
     (data: Record<string, unknown>) => {
-      if (data.make) setValue("make", data.make as string);
-      if (data.model) setValue("model", data.model as string);
-      if (data.year) setValue("year", data.year as number);
-      if (data.mileage) setValue("mileage", data.mileage as number);
-      if (data.fuel) setValue("fuel", data.fuel as string);
-      if (data.transmission) setValue("transmission", data.transmission as string);
-      if (data.body) setValue("body", data.body as string);
-      if (data.color) setValue("color", data.color as string);
-      if (data.power) setValue("power", data.power as number);
-      if (data.engineSize) setValue("engineSize", data.engineSize as number);
-      if (data.price) setValue("price", data.price as number);
-      if (data.description) setValue("description", data.description as string);
+      const opts = { shouldValidate: true, shouldDirty: true };
+      if (data.make) setValue("make", data.make as string, opts);
+      if (data.model) setValue("model", data.model as string, opts);
+      if (data.year) setValue("year", data.year as number, opts);
+      if (data.mileage) setValue("mileage", data.mileage as number, opts);
+      if (data.fuel) setValue("fuel", data.fuel as string, opts);
+      if (data.transmission) setValue("transmission", data.transmission as string, opts);
+      if (data.body) setValue("body", data.body as string, opts);
+      if (data.color) setValue("color", data.color as string, opts);
+      if (data.power) setValue("power", data.power as number, opts);
+      if (data.engineSize) setValue("engineSize", data.engineSize as number, opts);
+      if (data.price) setValue("price", data.price as number, opts);
+      if (data.description) setValue("description", data.description as string, opts);
       if (data.equipment) setEquipment(data.equipment as string[]);
-      if (data.city) setValue("contactCity", data.city as string);
-      if (data.currency) setValue("currency", data.currency as "KM" | "EUR");
-      if (data.negotiable) setValue("negotiable", data.negotiable as boolean);
+      if (data.city) setValue("contactCity", data.city as string, opts);
+      if (data.currency) setValue("currency", data.currency as "KM" | "EUR", opts);
+      if (data.negotiable) setValue("negotiable", data.negotiable as boolean, opts);
+
+      // Extract mileage from description if not directly available
+      if (!data.mileage && data.description) {
+        const desc = data.description as string;
+        const kmMatch = desc.match(/(\d[\d.]*)\s*km/i);
+        if (kmMatch) {
+          const km = parseInt(kmMatch[1].replace(/\./g, ''));
+          if (km > 0) setValue("mileage", km, opts);
+        }
+      }
+
+      // Extract fuel from description if not directly available
+      if (!data.fuel && data.description) {
+        const desc = (data.description as string).toLowerCase();
+        if (desc.includes('dizel') || desc.includes('diesel')) setValue("fuel", "dizel", opts);
+        else if (desc.includes('benzin')) setValue("fuel", "benzin", opts);
+        else if (desc.includes('elektr')) setValue("fuel", "elektricni", opts);
+        else if (desc.includes('hibrid') || desc.includes('hybrid')) setValue("fuel", "hibrid", opts);
+      }
+
       // Store imported photo URLs
       if (data.photos && Array.isArray(data.photos) && (data.photos as string[]).length > 0) {
         setImportedPhotoUrls(data.photos as string[]);

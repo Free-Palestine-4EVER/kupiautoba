@@ -23,7 +23,7 @@ export default function ImportSection({ onImportSuccess, onJumpToStep }: ImportS
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
   const [message, setMessage] = useState("");
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   const handleImport = async (e: React.FormEvent) => {
     e.preventDefault();
