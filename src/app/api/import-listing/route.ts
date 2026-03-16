@@ -28,6 +28,8 @@ interface ParsedListing {
   driveType?: DriveType;
   equipment?: string[];
   registrationUntil?: string;
+  previousOwners?: number;
+  registrationStatus?: string;
   negotiable?: boolean;
   importedFrom?: string;
   sourceUrl?: string;
@@ -431,21 +433,91 @@ function parseAutoPlac(html: string, url: string): ParsedListing {
   const driveStr = findAttr('mechanic', 'Pogon');
   if (driveStr) listing.driveType = matchDrive(driveStr);
 
-  // Additional info → equipment
+  // Additional info → extract dedicated fields + equipment
   const additionalInfo = dig(data, 'attributes', 'additional_info');
-  if (Array.isArray(additionalInfo) && additionalInfo.length > 0) {
-    listing.equipment = additionalInfo
-      .map((a: { display_name?: string; value?: string }) => {
-        const name = a.display_name || '';
-        const val = a.value || '';
-        // If value is meaningful (not just "Da"/"Yes"), include it
-        if (val && val !== 'Da' && val !== 'Yes' && val !== '1') {
-          return `${name}: ${val}`;
+  const equipmentItems: string[] = [];
+
+  if (Array.isArray(additionalInfo)) {
+    for (const a of additionalInfo) {
+      const name = (a.display_name || '').toLowerCase();
+      const val = a.value || '';
+      
+      // Map known fields to dedicated listing properties
+      if (name.includes('registrovan do') && val) {
+        listing.registrationUntil = val;
+      } else if (name.includes('prethodnih vlasnika') && val) {
+        listing.previousOwners = parseNum(val);
+      } else if (name.includes('godina prve registracije')) {
+        // info only, skip
+      } else if (name.includes('vlasništvo') || name.includes('vlasnistvo')) {
+        // Registration status: "Domaće tablice", "Strane tablice", "Odjavljen"
+        if (val.toLowerCase().includes('domaće') || val.toLowerCase().includes('domace')) {
+          listing.registrationStatus = 'registrovan';
+        } else if (val.toLowerCase().includes('strane')) {
+          listing.registrationStatus = 'strane-tablice';
+        } else if (val.toLowerCase().includes('odjavljen')) {
+          listing.registrationStatus = 'neregistrovan';
         }
-        return name;
-      })
-      .filter(Boolean);
+      } else if (name.includes('emisioni standard')) {
+        equipmentItems.push(`${a.display_name}: ${val}`);
+      } else {
+        // Everything else goes to equipment with value
+        if (val && val !== 'Da' && val !== 'Yes' && val !== '1' && val !== 'True') {
+          equipmentItems.push(`${a.display_name}: ${val}`);
+        } else {
+          equipmentItems.push(a.display_name || '');
+        }
+      }
+    }
   }
+
+  // Additional equipment (boolean items like Navigacija=True, ABS=True)
+  const additionalEquipment = dig(data, 'attributes', 'additional_equipment');
+  if (Array.isArray(additionalEquipment)) {
+    for (const a of additionalEquipment) {
+      const name = a.display_name || '';
+      const val = String(a.value || '').toLowerCase();
+      // Only include items that are "true" / "True" / "Da"
+      if (val === 'true' || val === 'da' || val === '1' || val === 'yes') {
+        // Avoid duplicates
+        if (!equipmentItems.includes(name)) {
+          equipmentItems.push(name);
+        }
+      }
+    }
+  }
+
+  // Also extract from design attributes that are equipment-like
+  const designAttrs = dig(data, 'attributes', 'design');
+  if (Array.isArray(designAttrs)) {
+    for (const a of designAttrs) {
+      const name = (a.display_name || '').toLowerCase();
+      const val = a.value || '';
+      if (name.includes('posjeduje gume') && val) {
+        equipmentItems.push(`Gume: ${val}`);
+      } else if (name.includes('veličina felgi') || name.includes('velicina felgi')) {
+        equipmentItems.push(`Felge: ${val}"`);
+      } else if (name.includes('svjetla') && val) {
+        equipmentItems.push(`${val} svjetla`);
+      } else if (name.includes('dizajn interijera') && val) {
+        equipmentItems.push(`Enterijer: ${val}`);
+      }
+    }
+  }
+
+  // Also add from mechanic attributes
+  const mechanicAttrs = dig(data, 'attributes', 'mechanic');
+  if (Array.isArray(mechanicAttrs)) {
+    for (const a of mechanicAttrs) {
+      const name = (a.display_name || '').toLowerCase();
+      const val = a.value || '';
+      if (name.includes('broj stepeni prijenosa') && val) {
+        equipmentItems.push(`Mjenjač: ${val}`);
+      }
+    }
+  }
+
+  listing.equipment = equipmentItems.filter(Boolean);
 
   return listing;
 }
