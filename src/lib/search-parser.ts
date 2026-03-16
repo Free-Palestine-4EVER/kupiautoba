@@ -36,6 +36,40 @@ const MAKE_ALIASES: Record<string, string> = {
   jaguar: 'Jaguar',
 };
 
+// Common model names that imply a specific make
+const MODEL_TO_MAKE: Record<string, { make: string; model: string }> = {
+  golf: { make: 'Volkswagen', model: 'Golf' },
+  passat: { make: 'Volkswagen', model: 'Passat' },
+  polo: { make: 'Volkswagen', model: 'Polo' },
+  tiguan: { make: 'Volkswagen', model: 'Tiguan' },
+  touareg: { make: 'Volkswagen', model: 'Touareg' },
+  caddy: { make: 'Volkswagen', model: 'Caddy' },
+  octavia: { make: 'Škoda', model: 'Octavia' },
+  fabia: { make: 'Škoda', model: 'Fabia' },
+  superb: { make: 'Škoda', model: 'Superb' },
+  clio: { make: 'Renault', model: 'Clio' },
+  megane: { make: 'Renault', model: 'Megane' },
+  corsa: { make: 'Opel', model: 'Corsa' },
+  astra: { make: 'Opel', model: 'Astra' },
+  insignia: { make: 'Opel', model: 'Insignia' },
+  punto: { make: 'Fiat', model: 'Punto' },
+  panda: { make: 'Fiat', model: 'Panda' },
+  fiesta: { make: 'Ford', model: 'Fiesta' },
+  focus: { make: 'Ford', model: 'Focus' },
+  mondeo: { make: 'Ford', model: 'Mondeo' },
+  civic: { make: 'Honda', model: 'Civic' },
+  yaris: { make: 'Toyota', model: 'Yaris' },
+  corolla: { make: 'Toyota', model: 'Corolla' },
+  tucson: { make: 'Hyundai', model: 'Tucson' },
+  sportage: { make: 'Kia', model: 'Sportage' },
+  qashqai: { make: 'Nissan', model: 'Qashqai' },
+  swift: { make: 'Suzuki', model: 'Swift' },
+  leon: { make: 'Seat', model: 'Leon' },
+  ibiza: { make: 'Seat', model: 'Ibiza' },
+  sandero: { make: 'Dacia', model: 'Sandero' },
+  duster: { make: 'Dacia', model: 'Duster' },
+};
+
 const FUEL_ALIASES: Record<string, string> = {
   benzin: 'benzin', benzinac: 'benzin',
   dizel: 'dizel', diesel: 'dizel', dizelaš: 'dizel',
@@ -86,6 +120,19 @@ export function parseSearchQuery(queryStr: string): SearchFilters {
       filters.make = MAKE_ALIASES[tokens[i]];
       used.add(i);
       break;
+    }
+  }
+
+  // If no make found, try matching by common model names (e.g. "Golf" → VW)
+  if (!filters.make) {
+    for (let i = 0; i < tokens.length; i++) {
+      if (used.has(i)) continue;
+      if (MODEL_TO_MAKE[tokens[i]]) {
+        filters.make = MODEL_TO_MAKE[tokens[i]].make;
+        filters.model = MODEL_TO_MAKE[tokens[i]].model;
+        used.add(i);
+        break;
+      }
     }
   }
 
