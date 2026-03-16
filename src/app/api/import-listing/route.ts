@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import type { FuelType, TransmissionType, BodyType } from '@/types';
+import type { FuelType, TransmissionType, BodyType, DriveType } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -14,17 +14,21 @@ interface ParsedListing {
   fuel?: FuelType;
   transmission?: TransmissionType;
   body?: BodyType;
+  color?: string;
+  power?: number;       // kW
+  powerHP?: number;     // KS/HP
+  engineSize?: number;  // cc
   price?: number;
   currency?: string;
   description?: string;
   photos?: string[];
   city?: string;
-  equipment?: string[];
-  power?: number;
-  engineSize?: number;
-  color?: string;
   doors?: number;
+  seats?: number;
+  driveType?: DriveType;
+  equipment?: string[];
   importedFrom?: string;
+  sourceUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -39,59 +43,72 @@ const SUPPORTED_DOMAINS = [
 ];
 
 // ---------------------------------------------------------------------------
+// Mapping tables
+// ---------------------------------------------------------------------------
+
+const FUEL_MAP: Record<string, FuelType> = {
+  benzin: 'benzin', petrol: 'benzin', gasoline: 'benzin',
+  dizel: 'dizel', diesel: 'dizel',
+  plin: 'plin', lpg: 'plin', 'tng / cng': 'plin', gas: 'plin',
+  'benzin+plin': 'benzin+plin', 'benzin + plin': 'benzin+plin',
+  hibrid: 'hibrid', hybrid: 'hibrid', 'plug-in hybrid': 'hibrid', 'plug-in hibrid': 'hibrid',
+  elektricni: 'elektricni', 'električni': 'elektricni', electric: 'elektricni', elektro: 'elektricni',
+};
+
+const TRANSMISSION_MAP: Record<string, TransmissionType> = {
+  manuelni: 'manuelni', manuelno: 'manuelni', manual: 'manuelni', 'ručni': 'manuelni',
+  automatski: 'automatski', automatik: 'automatski', automatic: 'automatski',
+  tiptronic: 'automatski', dsg: 'automatski', cvt: 'automatski',
+  poluautomatski: 'poluautomatski', poluautomatik: 'poluautomatski',
+};
+
+const BODY_MAP: Record<string, BodyType> = {
+  limuzina: 'limuzina', sedan: 'limuzina',
+  karavan: 'karavan', estate: 'karavan', wagon: 'karavan', kombi: 'karavan',
+  hatchback: 'hatchback', 'hečbek': 'hatchback',
+  suv: 'SUV', terenac: 'SUV', 'džip': 'SUV', 'suv / terensko vozilo': 'SUV',
+  coupe: 'coupe', 'kupé': 'coupe', kupe: 'coupe',
+  cabrio: 'cabrio', kabriolet: 'cabrio',
+  pickup: 'pickup',
+  monovolumen: 'monovolumen', minivan: 'monovolumen',
+};
+
+const DRIVE_MAP: Record<string, DriveType> = {
+  prednji: 'prednji', fwd: 'prednji',
+  zadnji: 'zadnji', rwd: 'zadnji',
+  'sva četiri': 'sva-cetiri', 'sva cetiri': 'sva-cetiri',
+  '4x4': 'sva-cetiri', awd: 'sva-cetiri', '4wd': 'sva-cetiri',
+  '4motion': 'sva-cetiri', xdrive: 'sva-cetiri', quattro: 'sva-cetiri',
+};
+
+function matchFuel(raw: string): FuelType | undefined {
+  return FUEL_MAP[raw.toLowerCase().trim()];
+}
+
+function matchTransmission(raw: string): TransmissionType | undefined {
+  return TRANSMISSION_MAP[raw.toLowerCase().trim()];
+}
+
+function matchBody(raw: string): BodyType | undefined {
+  return BODY_MAP[raw.toLowerCase().trim()];
+}
+
+function matchDrive(raw: string): DriveType | undefined {
+  return DRIVE_MAP[raw.toLowerCase().trim()];
+}
+
+// ---------------------------------------------------------------------------
 // Utility helpers
 // ---------------------------------------------------------------------------
 
 function getDomainFromUrl(url: string): string | null {
   try {
-    const parsed = new URL(url);
-    return parsed.hostname.replace(/^www\./, '');
+    return new URL(url).hostname.replace(/^www\./, '');
   } catch {
     return null;
   }
 }
 
-/** Extract the content attribute of a <meta> tag by property or name. */
-function getMetaContent(html: string, attr: string): string | null {
-  // Handles both property="og:title" and name="description" etc.
-  // Matches single or double quotes, and content before or after the property attr.
-  const patterns = [
-    new RegExp(
-      `<meta[^>]+(?:property|name)=["']${escapeRegex(attr)}["'][^>]+content=["']([^"']*)["']`,
-      'i',
-    ),
-    new RegExp(
-      `<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${escapeRegex(attr)}["']`,
-      'i',
-    ),
-  ];
-  for (const re of patterns) {
-    const m = html.match(re);
-    if (m && m[1]) return decodeHtmlEntities(m[1].trim());
-  }
-  return null;
-}
-
-/** Get all og:image values (some pages set more than one). */
-function getAllOgImages(html: string): string[] {
-  const images: string[] = [];
-  const re =
-    /<meta[^>]+(?:property|name)=["']og:image["'][^>]+content=["']([^"']*)["']|<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']og:image["']/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(html)) !== null) {
-    const url = m[1] || m[2];
-    if (url) images.push(url.trim());
-  }
-  return images;
-}
-
-/** Extract the <title>…</title> content. */
-function getTitleTag(html: string): string | null {
-  const m = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-  return m ? decodeHtmlEntities(m[1].trim()) : null;
-}
-
-/** Decode common HTML entities. */
 function decodeHtmlEntities(str: string): string {
   return str
     .replace(/&amp;/g, '&')
@@ -108,157 +125,168 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** Strip HTML tags. */
-function stripTags(html: string): string {
-  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+/** Strip HTML tags, convert block elements to newlines, collapse whitespace. */
+function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
-/** Parse a number from a string, ignoring non-numeric chars except dots/commas. */
-function parseNumber(raw: string | undefined | null): number | undefined {
-  if (!raw) return undefined;
-  // Remove everything except digits, dots, and commas
+/** Parse a number from messy string input. */
+function parseNum(raw: string | number | undefined | null): number | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw === 'number') return isNaN(raw) ? undefined : Math.round(raw);
   const cleaned = raw.replace(/[^\d.,]/g, '');
   if (!cleaned) return undefined;
-  // Normalize: treat comma as decimal only if it's followed by 1-2 digits at end
-  // Otherwise treat commas as thousand-separators
-  const normalized = cleaned.replace(/\./g, '').replace(',', '.');
+  // Treat dots as thousand separators if there's a comma, else as decimal
+  const normalized = cleaned.includes(',')
+    ? cleaned.replace(/\./g, '').replace(',', '.')
+    : cleaned;
   const n = parseFloat(normalized);
   return isNaN(n) ? undefined : Math.round(n);
 }
 
-// ---------------------------------------------------------------------------
-// Fuel / Transmission / Body mapping helpers
-// ---------------------------------------------------------------------------
-
-const FUEL_MAP: Record<string, FuelType> = {
-  benzin: 'benzin',
-  petrol: 'benzin',
-  gasoline: 'benzin',
-  dizel: 'dizel',
-  diesel: 'dizel',
-  plin: 'plin',
-  lpg: 'plin',
-  'benzin+plin': 'benzin+plin',
-  'benzin + plin': 'benzin+plin',
-  hibrid: 'hibrid',
-  hybrid: 'hibrid',
-  elektricni: 'elektricni',
-  električni: 'elektricni',
-  electric: 'elektricni',
-  elektro: 'elektricni',
-  'plug-in hybrid': 'hibrid',
-  'plug-in hibrid': 'hibrid',
-  'tng / cng': 'plin',
-  gas: 'plin',
-};
-
-const TRANSMISSION_MAP: Record<string, TransmissionType> = {
-  manuelni: 'manuelni',
-  manuelno: 'manuelni',
-  manual: 'manuelni',
-  'ručni': 'manuelni',
-  automatski: 'automatski',
-  automatik: 'automatski',
-  automatic: 'automatski',
-  poluautomatski: 'poluautomatski',
-  poluautomatik: 'poluautomatski',
-  tiptronic: 'automatski',
-  dsg: 'automatski',
-  cvt: 'automatski',
-};
-
-const BODY_MAP: Record<string, BodyType> = {
-  limuzina: 'limuzina',
-  sedan: 'limuzina',
-  karavan: 'karavan',
-  estate: 'karavan',
-  wagon: 'karavan',
-  kombi: 'kombi',
-  hatchback: 'hatchback',
-  hečbek: 'hatchback',
-  suv: 'SUV',
-  'suv / terensko vozilo': 'SUV',
-  terenac: 'SUV',
-  coupe: 'coupe',
-  kupe: 'coupe',
-  cabrio: 'cabrio',
-  kabriolet: 'cabrio',
-  pickup: 'pickup',
-  monovolumen: 'monovolumen',
-  minivan: 'monovolumen',
-};
-
-function matchFuel(raw: string): FuelType | undefined {
-  const lower = raw.toLowerCase().trim();
-  return FUEL_MAP[lower];
+/** Convert engine size: "2.0" → 2000, "1998" stays 1998. */
+function parseEngineSize(raw: string | number | undefined | null): number | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const s = String(raw).trim();
+  const n = parseFloat(s.replace(',', '.'));
+  if (isNaN(n)) return undefined;
+  // Values like 2.0, 1.6, 3.0 → multiply by 1000
+  if (n < 100) return Math.round(n * 1000);
+  return Math.round(n);
 }
 
-function matchTransmission(raw: string): TransmissionType | undefined {
-  const lower = raw.toLowerCase().trim();
-  return TRANSMISSION_MAP[lower];
+/** Extract <meta> tag content by property or name. */
+function getMetaContent(html: string, attr: string): string | null {
+  const patterns = [
+    new RegExp(`<meta[^>]+(?:property|name)=["']${escapeRegex(attr)}["'][^>]+content=["']([^"']*)["']`, 'i'),
+    new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${escapeRegex(attr)}["']`, 'i'),
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    if (m?.[1]) return decodeHtmlEntities(m[1].trim());
+  }
+  return null;
 }
 
-function matchBody(raw: string): BodyType | undefined {
-  const lower = raw.toLowerCase().trim();
-  return BODY_MAP[lower];
+/** Extract __NEXT_DATA__ JSON from HTML page. */
+function extractNextData(html: string): Record<string, unknown> | null {
+  const match = html.match(/<script\s+id="__NEXT_DATA__"\s+type="application\/json">([\s\S]*?)<\/script>/i);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+/** Extract JSON-LD from HTML page. */
+function extractJsonLd(html: string): Record<string, unknown> | null {
+  const match = html.match(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i);
+  if (!match?.[1]) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+/** Get all og:image values. */
+function getAllOgImages(html: string): string[] {
+  const images: string[] = [];
+  const re = /<meta[^>]+(?:property|name)=["']og:image["'][^>]+content=["']([^"']*)["']|<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']og:image["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const url = m[1] || m[2];
+    if (url) images.push(url.trim());
+  }
+  return images;
+}
+
+/** Fetch HTML with good headers and timeout. */
+async function fetchHtml(url: string): Promise<string> {
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'bs,hr,sr,en;q=0.5',
+    },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) {
+    if (response.status === 403 && url.includes('olx.ba')) {
+      throw new Error('OLX.ba koristi Cloudflare zaštitu koja blokira automatski uvoz. Molimo ručno kopirajte podatke sa OLX oglasa.');
+    }
+    throw new Error(`HTTP ${response.status}`);
+  }
+  return response.text();
+}
+
+/** Parse doors string like "4/5" → 4 */
+function parseDoors(raw: string | number | undefined | null): number | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const s = String(raw).trim();
+  const m = s.match(/^(\d)/);
+  return m ? Number(m[1]) : undefined;
 }
 
 // ---------------------------------------------------------------------------
-// Commonly-known car makes for guessing make/model from title
+// Make/model guessing from title (fallback)
 // ---------------------------------------------------------------------------
 
 const KNOWN_MAKES = [
-  'Audi', 'BMW', 'Citroen', 'Citroën', 'Dacia', 'Fiat', 'Ford', 'Honda',
-  'Hyundai', 'Jeep', 'Kia', 'Land Rover', 'Mazda', 'Mercedes-Benz', 'Mercedes',
-  'Nissan', 'Opel', 'Peugeot', 'Porsche', 'Renault', 'Seat', 'SEAT',
-  'Škoda', 'Skoda', 'Toyota', 'Volkswagen', 'VW', 'Volvo', 'Chevrolet',
-  'Chrysler', 'Dodge', 'Alfa Romeo', 'Mini', 'MINI', 'Mitsubishi', 'Subaru',
-  'Suzuki', 'Tesla', 'Lexus', 'Infiniti', 'Jaguar', 'Maserati', 'Ferrari',
-  'Lamborghini', 'Bentley', 'Rolls-Royce', 'Aston Martin', 'Lancia',
-  'Saab', 'Smart', 'Ssangyong', 'Daewoo', 'Zastava', 'Yugo',
+  'Alfa Romeo', 'Aston Martin', 'Audi', 'BMW', 'Bentley', 'Chevrolet',
+  'Chrysler', 'Citroen', 'Citroën', 'Dacia', 'Daewoo', 'Dodge', 'Fiat',
+  'Ford', 'Honda', 'Hyundai', 'Infiniti', 'Jaguar', 'Jeep', 'Kia',
+  'Lamborghini', 'Lancia', 'Land Rover', 'Lexus', 'Maserati', 'Mazda',
+  'Mercedes-Benz', 'Mercedes', 'Mini', 'MINI', 'Mitsubishi', 'Nissan',
+  'Opel', 'Peugeot', 'Porsche', 'Renault', 'Rolls-Royce', 'Saab',
+  'Seat', 'SEAT', 'Smart', 'Ssangyong', 'Subaru', 'Suzuki', 'Toyota',
+  'Tesla', 'Volkswagen', 'VW', 'Volvo', 'Škoda', 'Skoda',
 ];
 
-function guessMakeModelFromTitle(title: string): { make?: string; model?: string } {
+const MAKE_NORMALIZE: Record<string, string> = {
+  vw: 'Volkswagen',
+  mercedes: 'Mercedes-Benz',
+  'citroën': 'Citroen',
+  skoda: 'Škoda',
+  mini: 'Mini',
+  seat: 'Seat',
+};
+
+function normalizeMake(raw: string): string {
+  return MAKE_NORMALIZE[raw.toLowerCase()] || raw;
+}
+
+function guessMakeModel(title: string): { make?: string; model?: string } {
   if (!title) return {};
   for (const make of KNOWN_MAKES) {
     const idx = title.toLowerCase().indexOf(make.toLowerCase());
-    if (idx !== -1) {
-      const normalizedMake = normalizeCarMake(make);
-      // Take the word(s) right after the make as model
-      const afterMake = title.substring(idx + make.length).trim();
-      const modelParts = afterMake.split(/[\s,]+/);
-      // Take up to 2 tokens as model (e.g. "Golf 7", "320d", "A3 Sportback")
-      const modelTokens: string[] = [];
-      for (const part of modelParts) {
-        if (!part || part.length === 0) break;
-        // Stop if we hit a year-like token or a price
-        if (/^\d{4}$/.test(part) && Number(part) >= 1990) break;
-        if (/^\d+[\.,]?\d*\s*(km|KM|EUR|€|BAM)/.test(part)) break;
-        modelTokens.push(part);
-        if (modelTokens.length >= 3) break;
-      }
-      return {
-        make: normalizedMake,
-        model: modelTokens.length > 0 ? modelTokens.join(' ') : undefined,
-      };
+    if (idx === -1) continue;
+    const normalized = normalizeMake(make);
+    const after = title.substring(idx + make.length).trim();
+    const tokens: string[] = [];
+    for (const part of after.split(/[\s,]+/)) {
+      if (!part) break;
+      if (/^\d{4}$/.test(part) && Number(part) >= 1990) break;
+      if (/^\d+[\.,]?\d*\s*(km|KM|EUR|€|BAM)/.test(part)) break;
+      tokens.push(part);
+      if (tokens.length >= 3) break;
     }
+    return { make: normalized, model: tokens.length > 0 ? tokens.join(' ') : undefined };
   }
   return {};
 }
 
-function normalizeCarMake(raw: string): string {
-  const map: Record<string, string> = {
-    vw: 'Volkswagen',
-    mercedes: 'Mercedes-Benz',
-    'citroën': 'Citroen',
-    skoda: 'Škoda',
-    mini: 'Mini',
-    seat: 'Seat',
-  };
-  return map[raw.toLowerCase()] || raw;
-}
-
-/** Try to find a year (4-digit number between 1990 and current year + 1) in text. */
 function extractYear(text: string): number | undefined {
   const currentYear = new Date().getFullYear();
   const matches = text.match(/\b(19\d{2}|20\d{2})\b/g);
@@ -271,224 +299,284 @@ function extractYear(text: string): number | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Extract all gallery/slider image URLs from HTML
+// Safe deep access helper
 // ---------------------------------------------------------------------------
 
-function extractImageUrls(html: string): string[] {
-  const urls = new Set<string>();
-
-  // og:image tags (already captured by getAllOgImages, but include here as well)
-  const ogImages = getAllOgImages(html);
-  ogImages.forEach((u) => urls.add(u));
-
-  // Common gallery patterns - images inside data attributes or JSON
-  const dataPatterns = [
-    /data-src=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"']*)/gi,
-    /data-full=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"']*)/gi,
-    /data-original=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"']*)/gi,
-    /data-lazy=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"']*)/gi,
-    /data-image=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"']*)/gi,
-  ];
-  for (const re of dataPatterns) {
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(html)) !== null) {
-      if (m[1] && m[1].startsWith('http')) urls.add(m[1]);
-    }
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function dig(obj: any, ...keys: string[]): any {
+  let current = obj;
+  for (const key of keys) {
+    if (current === null || current === undefined || typeof current !== 'object') return undefined;
+    current = current[key];
   }
-
-  // Image tags inside gallery/slider containers
-  const gallerySection =
-    html.match(
-      /class=["'][^"']*(?:gallery|slider|carousel|swiper|lightbox|photo)[^"']*["'][^>]*>[\s\S]*?(?:<\/div>|<\/section>|<\/ul>)/gi,
-    ) || [];
-  for (const section of gallerySection) {
-    const imgRe = /src=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"']*)/gi;
-    let m: RegExpExecArray | null;
-    while ((m = imgRe.exec(section)) !== null) {
-      if (m[1] && m[1].startsWith('http') && !m[1].includes('icon') && !m[1].includes('logo')) {
-        urls.add(m[1]);
-      }
-    }
-  }
-
-  return Array.from(urls);
+  return current;
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // ---------------------------------------------------------------------------
-// Price extraction helpers
-// ---------------------------------------------------------------------------
-
-function extractPrice(html: string): { price?: number; currency?: string } {
-  // Try various price patterns commonly found in car listing sites
-  const pricePatterns = [
-    // "12.500 KM" or "12500 KM"
-    /(\d[\d.,]*)\s*(?:KM|BAM|konvertibiln)/i,
-    // "€ 12.500" or "12.500 €" or "12500 EUR"
-    /€\s*(\d[\d.,]*)|(\d[\d.,]*)\s*€|(\d[\d.,]*)\s*EUR/i,
-    // "Cijena: 12.500" or "Price: 12500"
-    /(?:cijena|cena|price)[:\s]*(\d[\d.,]*)/i,
-  ];
-
-  for (const re of pricePatterns) {
-    const m = html.match(re);
-    if (m) {
-      const numStr = m[1] || m[2] || m[3] || m[4];
-      const price = parseNumber(numStr);
-      if (price && price > 0) {
-        const isEur = re.source.includes('€') || re.source.includes('EUR');
-        const currency = /€|EUR/i.test(m[0]) ? 'EUR' : 'KM';
-        return { price, currency: isEur ? 'EUR' : currency };
-      }
-    }
-  }
-
-  return {};
-}
-
-// ---------------------------------------------------------------------------
-// Generic fallback parser (works on any site via meta tags)
-// ---------------------------------------------------------------------------
-
-function parseGeneric(html: string, url: string): ParsedListing {
-  const title = getMetaContent(html, 'og:title') || getTitleTag(html) || undefined;
-  const description =
-    getMetaContent(html, 'og:description') ||
-    getMetaContent(html, 'description') ||
-    undefined;
-  const photos = extractImageUrls(html);
-  const { price, currency } = extractPrice(html);
-  const { make, model } = guessMakeModelFromTitle(title || '');
-  const year = extractYear(title || '') || extractYear(description || '');
-
-  return {
-    title,
-    make,
-    model,
-    year,
-    price,
-    currency,
-    description,
-    photos: photos.length > 0 ? photos : undefined,
-    importedFrom: getDomainFromUrl(url) || undefined,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// OLX.ba parser
-// ---------------------------------------------------------------------------
-
-function parseOlx(html: string, url: string): ParsedListing {
-  const listing = parseGeneric(html, url);
-  listing.importedFrom = 'olx.ba';
-
-  // OLX.ba uses a detail/properties section with label-value pairs.
-  // Common pattern: <div class="..attribute..">Label</div> <div>Value</div>
-  // or table rows, or definition lists.
-
-  // Extract key-value pairs from the properties/details section
-  const kvPairs = extractKeyValuePairs(html);
-
-  applyKvPairsToListing(listing, kvPairs);
-
-  // OLX.ba price is often in a prominent element
-  if (!listing.price) {
-    const priceMatch = html.match(
-      /class=["'][^"']*price[^"']*["'][^>]*>([^<]*)/i,
-    );
-    if (priceMatch) {
-      const { price, currency } = extractPriceFromText(priceMatch[1]);
-      listing.price = price;
-      listing.currency = currency;
-    }
-  }
-
-  // OLX.ba city is sometimes in a location span
-  if (!listing.city) {
-    const locMatch = html.match(
-      /class=["'][^"']*(?:location|lokacija)[^"']*["'][^>]*>([^<]*)/i,
-    );
-    if (locMatch) {
-      listing.city = stripTags(locMatch[1]).trim();
-    }
-  }
-
-  return listing;
-}
-
-// ---------------------------------------------------------------------------
-// AutoPlac.ba parser
+// AUTOPLAC.BA parser — uses __NEXT_DATA__ JSON
 // ---------------------------------------------------------------------------
 
 function parseAutoPlac(html: string, url: string): ParsedListing {
-  const listing = parseGeneric(html, url);
-  listing.importedFrom = 'autoplac.ba';
+  const listing: ParsedListing = { importedFrom: 'autoplac.ba', sourceUrl: url };
 
-  const kvPairs = extractKeyValuePairs(html);
-  applyKvPairsToListing(listing, kvPairs);
+  const nextData = extractNextData(html);
+  const data = dig(nextData, 'props', 'pageProps', 'data');
 
-  // AutoPlac often has structured spec tables
-  // Try to get specs from a table or definition list
-  const specTableMatch = html.match(
-    /<table[^>]*class=["'][^"']*(?:spec|detail|info|osobine|karakteristike)[^"']*["'][^>]*>([\s\S]*?)<\/table>/i,
-  );
-  if (specTableMatch) {
-    const rows = specTableMatch[1].match(/<tr[^>]*>([\s\S]*?)<\/tr>/gi) || [];
-    for (const row of rows) {
-      const cells = row.match(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi) || [];
-      if (cells.length >= 2 && cells[0] && cells[1]) {
-        const label = stripTags(cells[0]).toLowerCase();
-        const value = stripTags(cells[1]);
-        applyKvToListing(listing, label, value);
-      }
+  if (!data) {
+    // Fallback to meta tags if __NEXT_DATA__ not found
+    return parseFromMetaTags(html, listing);
+  }
+
+  // Title
+  listing.title = data.title || undefined;
+
+  // Price
+  if (data.price) {
+    listing.price = parseNum(data.price);
+  }
+  // Currency from display_price
+  const displayPrice = dig(data, 'object', 'data', 'display_price');
+  if (typeof displayPrice === 'string') {
+    if (displayPrice.includes('KM')) listing.currency = 'KM';
+    else if (/€|EUR/.test(displayPrice)) listing.currency = 'EUR';
+  }
+  if (!listing.currency) listing.currency = 'KM'; // default for autoplac.ba
+
+  // Make from brand array
+  const brandArr = data.brand;
+  if (Array.isArray(brandArr) && brandArr.length > 0) {
+    listing.make = brandArr[0].name || undefined;
+  }
+
+  // Model from model array
+  const modelArr = data.model;
+  if (Array.isArray(modelArr) && modelArr.length > 0) {
+    listing.model = modelArr[0].name || undefined;
+  }
+
+  // Images — pass CDN URLs directly, do NOT download
+  const imagesArr = data.images;
+  if (Array.isArray(imagesArr) && imagesArr.length > 0) {
+    listing.photos = imagesArr
+      .sort((a: { position?: number }, b: { position?: number }) =>
+        (a.position ?? 0) - (b.position ?? 0))
+      .map((img: { image_url?: string }) => img.image_url)
+      .filter(Boolean) as string[];
+  }
+
+  // Description — strip HTML
+  const descArr = data.description;
+  if (Array.isArray(descArr) && descArr.length > 0 && descArr[0].description) {
+    listing.description = stripHtml(decodeHtmlEntities(descArr[0].description));
+  }
+
+  // City — from data.city array first, then user.city_name fallback
+  const cityArr = data.city;
+  if (Array.isArray(cityArr) && cityArr.length > 0 && cityArr[0].name) {
+    listing.city = cityArr[0].name;
+  } else {
+    const user = data.user;
+    if (user?.city_name) {
+      listing.city = user.city_name;
     }
+  }
+
+  // --- Attributes ---
+
+  // Helper to find attribute value by display_name
+  const findAttr = (section: string, name: string): string | undefined => {
+    const attrs = dig(data, 'attributes', section);
+    if (!Array.isArray(attrs)) return undefined;
+    const item = attrs.find((a: { display_name?: string }) =>
+      a.display_name?.toLowerCase() === name.toLowerCase());
+    return item?.value;
+  };
+
+  // Basic attributes
+  const mileageStr = findAttr('basic', 'Kilometraža');
+  if (mileageStr) listing.mileage = parseNum(mileageStr);
+
+  const yearStr = findAttr('basic', 'Godište');
+  if (yearStr) listing.year = parseNum(yearStr);
+
+  // Design attributes
+  const bodyStr = findAttr('design', 'Tip karoserije');
+  if (bodyStr) listing.body = matchBody(bodyStr);
+
+  const colorStr = findAttr('design', 'Boja eksterijera');
+  if (colorStr) listing.color = colorStr;
+
+  const doorsStr = findAttr('design', 'Broj vrata');
+  if (doorsStr) listing.doors = parseDoors(doorsStr);
+
+  const seatsStr = findAttr('design', 'Broj sjedišta');
+  if (seatsStr) listing.seats = parseNum(seatsStr);
+
+  // Mechanic attributes
+  const transStr = findAttr('mechanic', 'Transmisija');
+  if (transStr) listing.transmission = matchTransmission(transStr);
+
+  const engineStr = findAttr('mechanic', 'Kubikaža');
+  if (engineStr) listing.engineSize = parseEngineSize(engineStr);
+
+  const fuelStr = findAttr('mechanic', 'Gorivo');
+  if (fuelStr) listing.fuel = matchFuel(fuelStr);
+
+  const kwStr = findAttr('mechanic', 'Kilovata (KW)');
+  if (kwStr) listing.power = parseNum(kwStr);
+
+  const hpStr = findAttr('mechanic', 'Konjskih snaga');
+  if (hpStr) listing.powerHP = parseNum(hpStr);
+
+  const driveStr = findAttr('mechanic', 'Pogon');
+  if (driveStr) listing.driveType = matchDrive(driveStr);
+
+  // Additional info → equipment
+  const additionalInfo = dig(data, 'attributes', 'additional_info');
+  if (Array.isArray(additionalInfo) && additionalInfo.length > 0) {
+    listing.equipment = additionalInfo
+      .map((a: { display_name?: string; value?: string }) => {
+        const name = a.display_name || '';
+        const val = a.value || '';
+        // If value is meaningful (not just "Da"/"Yes"), include it
+        if (val && val !== 'Da' && val !== 'Yes' && val !== '1') {
+          return `${name}: ${val}`;
+        }
+        return name;
+      })
+      .filter(Boolean);
   }
 
   return listing;
 }
 
 // ---------------------------------------------------------------------------
-// AutoBum.ba parser
+// AUTOBUM.BA parser — __NEXT_DATA__ or API fallback
 // ---------------------------------------------------------------------------
 
 function parseAutoBum(html: string, url: string): ParsedListing {
-  const listing = parseGeneric(html, url);
-  listing.importedFrom = 'autobum.ba';
+  const listing: ParsedListing = { importedFrom: 'autobum.ba', sourceUrl: url };
 
-  const kvPairs = extractKeyValuePairs(html);
-  applyKvPairsToListing(listing, kvPairs);
+  const nextData = extractNextData(html);
 
-  // AutoBum.ba may have a JSON-LD structured data block
-  const jsonLdMatch = html.match(
-    /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i,
-  );
-  if (jsonLdMatch) {
-    try {
-      const ld = JSON.parse(jsonLdMatch[1]);
-      if (ld) {
-        if (ld.name && !listing.title) listing.title = ld.name;
-        if (ld.description && !listing.description) listing.description = ld.description;
-        if (ld.image) {
-          const imgs = Array.isArray(ld.image) ? ld.image : [ld.image];
-          const allImgs = listing.photos ? listing.photos.concat(imgs) : imgs;
-          listing.photos = Array.from(new Set(allImgs));
-        }
-        if (ld.offers) {
-          const offer = Array.isArray(ld.offers) ? ld.offers[0] : ld.offers;
-          if (offer?.price && !listing.price) listing.price = parseNumber(String(offer.price));
-          if (offer?.priceCurrency && !listing.currency) listing.currency = offer.priceCurrency;
-        }
-        if (ld.brand?.name && !listing.make) listing.make = ld.brand.name;
-        if (ld.model && !listing.model) listing.model = ld.model;
-        if (ld.vehicleModelDate && !listing.year)
-          listing.year = parseNumber(String(ld.vehicleModelDate));
-        if (ld.mileageFromOdometer?.value && !listing.mileage)
-          listing.mileage = parseNumber(String(ld.mileageFromOdometer.value));
-        if (ld.fuelType && !listing.fuel) listing.fuel = matchFuel(ld.fuelType);
-        if (ld.vehicleTransmission && !listing.transmission)
-          listing.transmission = matchTransmission(ld.vehicleTransmission);
+  if (nextData) {
+    // Try to get listing data from __NEXT_DATA__
+    const pageProps = dig(nextData, 'props', 'pageProps');
+    const data = pageProps?.listing || pageProps?.data || pageProps?.vehicle || pageProps;
+
+    if (data && typeof data === 'object') {
+      listing.title = data.title || data.name || undefined;
+      listing.price = parseNum(data.price);
+      listing.year = parseNum(data.year);
+      listing.mileage = parseNum(data.mileage || data.km);
+
+      if (data.fuel) listing.fuel = matchFuel(String(data.fuel));
+      if (data.transmission) listing.transmission = matchTransmission(String(data.transmission));
+      if (data.body || data.body_type) listing.body = matchBody(String(data.body || data.body_type));
+
+      if (data.power_kw) listing.power = parseNum(data.power_kw);
+      if (data.power_hp || data.power_ks) listing.powerHP = parseNum(data.power_hp || data.power_ks);
+      if (data.engine_size || data.engine) listing.engineSize = parseEngineSize(data.engine_size || data.engine);
+      if (data.color) listing.color = String(data.color);
+      if (data.doors) listing.doors = parseNum(data.doors);
+      if (data.seats) listing.seats = parseNum(data.seats);
+      if (data.drive_type || data.drive) listing.driveType = matchDrive(String(data.drive_type || data.drive));
+
+      if (data.make || data.brand) listing.make = normalizeMake(String(data.make || data.brand));
+      if (data.model) listing.model = String(data.model);
+
+      // City
+      const city = data.city || dig(data, 'location', 'city') || dig(data, 'user', 'city');
+      if (city) listing.city = String(typeof city === 'object' ? city.name || city : city);
+
+      // Images
+      if (Array.isArray(data.images)) {
+        listing.photos = data.images.map((img: string | { url?: string; image_url?: string }) =>
+          typeof img === 'string' ? img : (img.url || img.image_url || '')).filter(Boolean);
+      } else if (data.image) {
+        listing.photos = [String(data.image)];
       }
-    } catch {
-      // JSON-LD parse failed, continue with regex parsing
+
+      // Description
+      if (data.description) {
+        listing.description = stripHtml(decodeHtmlEntities(String(data.description)));
+      }
+
+      if (data.currency) listing.currency = String(data.currency);
+    }
+  }
+
+  // If we got nothing from __NEXT_DATA__, try JSON-LD
+  if (!listing.title) {
+    const jsonLd = extractJsonLd(html);
+    if (jsonLd) {
+      applyJsonLd(listing, jsonLd);
+    }
+  }
+
+  // Final fallback to meta tags
+  if (!listing.title) {
+    parseFromMetaTags(html, listing);
+  }
+
+  // AutoBum puts structured data in og:description: "Audi, A3, 2011, Dizel (Euro5), 1.6, 66 KW (89 KS), 271000 km"
+  const ogDesc = getMetaContent(html, 'og:description');
+  if (ogDesc) {
+    const parts = ogDesc.split(',').map((s: string) => s.trim());
+    if (parts.length >= 6) {
+      if (!listing.make) listing.make = normalizeMake(parts[0]);
+      if (!listing.model) listing.model = parts[1];
+      if (!listing.year) listing.year = parseNum(parts[2]);
+      // Fuel: "Dizel (Euro5)" or "Benzin"
+      if (!listing.fuel) {
+        const fuelPart = parts[3]?.split('(')[0]?.trim();
+        if (fuelPart) listing.fuel = matchFuel(fuelPart);
+      }
+      // Engine: "1.6" or "2.0"
+      if (!listing.engineSize) listing.engineSize = parseEngineSize(parts[4]);
+      // Power: "66 KW (89 KS)" or "140 KW (190 KS)"
+      const powerStr = parts[5];
+      if (powerStr && !listing.power) {
+        const kwMatch = powerStr.match(/(\d+)\s*KW/i);
+        const hpMatch = powerStr.match(/(\d+)\s*KS/i);
+        if (kwMatch) listing.power = parseInt(kwMatch[1]);
+        if (hpMatch) listing.powerHP = parseInt(hpMatch[1]);
+      }
+      // Mileage: "271000 km"
+      if (parts[6] && !listing.mileage) {
+        const kmMatch = parts[6].match(/(\d+)\s*km/i);
+        if (kmMatch) listing.mileage = parseInt(kmMatch[1]);
+      }
+    }
+  }
+
+  // Extract ALL images from AutoBum HTML (CDN pattern)
+  if (!listing.photos || listing.photos.length <= 2) {
+    const imgSet = new Set<string>();
+    const imgRegex = /https:\/\/api\.autobum\.ba\/storage\/cache\/1200x5000\/[^\s"')]+\.jpg/g;
+    let match: RegExpExecArray | null;
+    while ((match = imgRegex.exec(html)) !== null) {
+      imgSet.add(match[0]);
+    }
+    // Also get smaller resolution images if large ones not found
+    if (imgSet.size === 0) {
+      const imgRegex2 = /https:\/\/api\.autobum\.ba\/storage\/cache\/[^\s"')]+\.jpg/g;
+      while ((match = imgRegex2.exec(html)) !== null) {
+        imgSet.add(match[0]);
+      }
+    }
+    if (imgSet.size > 0) {
+      listing.photos = [...imgSet];
+    }
+  }
+
+  // Extract price from AutoBum HTML
+  if (!listing.price) {
+    const priceMatch = html.match(/(\d[\d.]*)\s*KM/);
+    if (priceMatch) {
+      listing.price = parseNum(priceMatch[1].replace(/\./g, ''));
+      listing.currency = 'KM';
     }
   }
 
@@ -496,257 +584,315 @@ function parseAutoBum(html: string, url: string): ParsedListing {
 }
 
 // ---------------------------------------------------------------------------
-// PoslovniAutomobili.com (polovniautomobili.com) parser
+// OLX.BA parser — Cloudflare protected, best effort
+// ---------------------------------------------------------------------------
+
+function parseOlx(html: string, url: string): ParsedListing {
+  const listing: ParsedListing = { importedFrom: 'olx.ba', sourceUrl: url };
+
+  // OLX is often Cloudflare-protected. Extract what we can from meta tags.
+  listing.title = getMetaContent(html, 'og:title') || getMetaContent(html, 'title') || undefined;
+  listing.description = getMetaContent(html, 'og:description') || getMetaContent(html, 'description') || undefined;
+
+  // og:image
+  const ogImages = getAllOgImages(html);
+  if (ogImages.length > 0) {
+    listing.photos = ogImages;
+  }
+
+  // Try to extract price from meta or body
+  const priceFromMeta = getMetaContent(html, 'product:price:amount');
+  if (priceFromMeta) {
+    listing.price = parseNum(priceFromMeta);
+    const currency = getMetaContent(html, 'product:price:currency');
+    listing.currency = currency || 'KM';
+  }
+
+  // Try to parse price from body
+  if (!listing.price) {
+    const priceMatch = html.match(/class=["'][^"']*price[^"']*["'][^>]*>([^<]*)/i);
+    if (priceMatch) {
+      const text = priceMatch[1].trim();
+      listing.price = parseNum(text);
+      if (/€|EUR/i.test(text)) listing.currency = 'EUR';
+      else if (/KM|BAM/i.test(text)) listing.currency = 'KM';
+    }
+  }
+
+  // Try to extract specs from HTML body (key-value pairs)
+  const kvPairs = extractKeyValuePairs(html);
+  for (const [label, value] of kvPairs) {
+    applyKvToListing(listing, label, value);
+  }
+
+  // City from location element
+  if (!listing.city) {
+    const locMatch = html.match(/class=["'][^"']*(?:location|lokacija)[^"']*["'][^>]*>([^<]*)/i);
+    if (locMatch) listing.city = locMatch[1].trim();
+  }
+
+  // Guess make/model from title
+  if (!listing.make && listing.title) {
+    const guess = guessMakeModel(listing.title);
+    if (guess.make) listing.make = guess.make;
+    if (guess.model) listing.model = guess.model;
+  }
+
+  // Year from title/description
+  if (!listing.year) {
+    listing.year = extractYear(listing.title || '') || extractYear(listing.description || '');
+  }
+
+  return listing;
+}
+
+// ---------------------------------------------------------------------------
+// POLOVNIAUTOMOBILI.COM parser — structured tables + meta + JSON-LD
 // ---------------------------------------------------------------------------
 
 function parsePolovniAutomobili(html: string, url: string): ParsedListing {
-  const listing = parseGeneric(html, url);
-  listing.importedFrom = 'polovniautomobili.com';
+  const listing: ParsedListing = { importedFrom: 'polovniautomobili.com', sourceUrl: url };
 
-  // This site uses structured detail tables extensively
+  // Meta tags first
+  listing.title = getMetaContent(html, 'og:title') || undefined;
+  listing.description = getMetaContent(html, 'og:description') || undefined;
+
+  const ogImages = getAllOgImages(html);
+  if (ogImages.length > 0) {
+    listing.photos = ogImages;
+  }
+
+  // JSON-LD
+  const jsonLd = extractJsonLd(html);
+  if (jsonLd) {
+    applyJsonLd(listing, jsonLd);
+  }
+
+  // HTML detail tables with car specs
   const kvPairs = extractKeyValuePairs(html);
-  applyKvPairsToListing(listing, kvPairs);
+  for (const [label, value] of kvPairs) {
+    applyKvToListing(listing, label, value);
+  }
 
-  // PoslovniAutomobili uses a div-based details section
-  // Pattern: <div class="divider">Label</div> <div class="value">Value</div>
-  const detailSections =
-    html.match(
-      /class=["'][^"']*(?:divider|uk-width)[^"']*["'][^>]*>([\s\S]*?)<\/div>\s*<div[^>]*>([\s\S]*?)<\/div>/gi,
-    ) || [];
+  // PA-specific: div-based detail sections
+  const detailSections = html.match(
+    /class=["'][^"']*(?:divider|uk-width)[^"']*["'][^>]*>([\s\S]*?)<\/div>\s*<div[^>]*>([\s\S]*?)<\/div>/gi,
+  ) || [];
   for (const section of detailSections) {
     const parts = section.match(/>([^<]+)</g);
     if (parts && parts.length >= 2) {
-      const label = parts[0].replace(/^>|<$/g, '').trim().toLowerCase();
-      const value = parts[1].replace(/^>|<$/g, '').trim();
-      applyKvToListing(listing, label, value);
+      const label = (parts[0] || '').replace(/^>|<$/g, '').trim();
+      const value = (parts[1] || '').replace(/^>|<$/g, '').trim();
+      if (label && value) applyKvToListing(listing, label, value);
     }
   }
 
-  // Try JSON-LD as well (this site sometimes includes it)
-  const jsonLdMatch = html.match(
-    /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/i,
-  );
-  if (jsonLdMatch) {
-    try {
-      const ld = JSON.parse(jsonLdMatch[1]);
-      if (ld?.['@type'] === 'Car' || ld?.['@type'] === 'Vehicle') {
-        if (ld.brand?.name && !listing.make) listing.make = ld.brand.name;
-        if (ld.model && !listing.model) listing.model = ld.model;
-        if (ld.vehicleModelDate && !listing.year)
-          listing.year = parseNumber(String(ld.vehicleModelDate));
-        if (ld.offers?.price && !listing.price)
-          listing.price = parseNumber(String(ld.offers.price));
-        if (ld.offers?.priceCurrency && !listing.currency)
-          listing.currency = ld.offers.priceCurrency;
-      }
-    } catch {
-      // Ignore JSON-LD parse errors
-    }
-  }
-
-  // City/location often in a specific element
+  // City from location element
   if (!listing.city) {
-    const cityMatch = html.match(
-      /class=["'][^"']*(?:city|location|mesto|lokacija)[^"']*["'][^>]*>([^<]+)/i,
-    );
-    if (cityMatch) {
-      listing.city = cityMatch[1].trim();
-    }
+    const cityMatch = html.match(/class=["'][^"']*(?:city|location|mesto|lokacija)[^"']*["'][^>]*>([^<]+)/i);
+    if (cityMatch) listing.city = cityMatch[1].trim();
   }
+
+  // Fallback: guess make/model from title
+  if (!listing.make && listing.title) {
+    const guess = guessMakeModel(listing.title);
+    if (guess.make) listing.make = guess.make;
+    if (guess.model) listing.model = guess.model;
+  }
+
+  if (!listing.year) {
+    listing.year = extractYear(listing.title || '') || extractYear(listing.description || '');
+  }
+
+  // Currency defaults to EUR for Serbian site
+  if (listing.price && !listing.currency) listing.currency = 'EUR';
 
   return listing;
 }
 
 // ---------------------------------------------------------------------------
-// Shared KV extraction and mapping helpers
+// Shared helpers for OLX / PA parsers
 // ---------------------------------------------------------------------------
 
-/** Extract label-value pairs from common HTML patterns. */
 function extractKeyValuePairs(html: string): Array<[string, string]> {
   const pairs: Array<[string, string]> = [];
 
-  // Pattern 1: <dt>Label</dt><dd>Value</dd>
+  // <dt>Label</dt><dd>Value</dd>
   const dlRe = /<dt[^>]*>([\s\S]*?)<\/dt>\s*<dd[^>]*>([\s\S]*?)<\/dd>/gi;
   let m: RegExpExecArray | null;
   while ((m = dlRe.exec(html)) !== null) {
-    pairs.push([stripTags(m[1]).trim(), stripTags(m[2]).trim()]);
+    pairs.push([strip(m[1]), strip(m[2])]);
   }
 
-  // Pattern 2: <th>Label</th><td>Value</td>
+  // <th>Label</th><td>Value</td>
   const thTdRe = /<th[^>]*>([\s\S]*?)<\/th>\s*<td[^>]*>([\s\S]*?)<\/td>/gi;
   while ((m = thTdRe.exec(html)) !== null) {
-    pairs.push([stripTags(m[1]).trim(), stripTags(m[2]).trim()]);
+    pairs.push([strip(m[1]), strip(m[2])]);
   }
 
-  // Pattern 3: label-value div pairs (common in modern sites)
-  // <div class="...label...">Label</div> ... <div class="...value...">Value</div>
-  const divPairRe =
-    /class=["'][^"']*(?:label|key|name|property|attribute)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span|p)>\s*(?:<[^>]*>)*\s*class=["'][^"']*(?:value|data|info|result)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span|p)>/gi;
-  while ((m = divPairRe.exec(html)) !== null) {
-    pairs.push([stripTags(m[1]).trim(), stripTags(m[2]).trim()]);
+  // div label-value pairs
+  const divRe = /class=["'][^"']*(?:label|key|name|property|attribute)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span|p)>\s*(?:<[^>]*>)*\s*class=["'][^"']*(?:value|data|info|result)[^"']*["'][^>]*>([\s\S]*?)<\/(?:div|span|p)>/gi;
+  while ((m = divRe.exec(html)) !== null) {
+    pairs.push([strip(m[1]), strip(m[2])]);
   }
 
-  // Pattern 4: <li> with strong/span label and value
-  const liRe =
-    /<li[^>]*>\s*<(?:strong|span|b)[^>]*>([\s\S]*?)<\/(?:strong|span|b)>\s*:?\s*([\s\S]*?)<\/li>/gi;
+  // <li><strong>Label</strong>: Value</li>
+  const liRe = /<li[^>]*>\s*<(?:strong|span|b)[^>]*>([\s\S]*?)<\/(?:strong|span|b)>\s*:?\s*([\s\S]*?)<\/li>/gi;
   while ((m = liRe.exec(html)) !== null) {
-    pairs.push([stripTags(m[1]).trim(), stripTags(m[2]).trim()]);
+    pairs.push([strip(m[1]), strip(m[2])]);
   }
 
   return pairs;
 }
 
-/** Extract price from a text string. */
-function extractPriceFromText(text: string): { price?: number; currency?: string } {
-  const cleaned = stripTags(text);
-  const price = parseNumber(cleaned);
-  let currency: string | undefined;
-  if (/€|EUR/i.test(cleaned)) currency = 'EUR';
-  else if (/KM|BAM/i.test(cleaned)) currency = 'KM';
-  return { price, currency };
+function strip(html: string): string {
+  return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-/** Apply an array of key-value pairs to the listing. */
-function applyKvPairsToListing(listing: ParsedListing, pairs: Array<[string, string]>): void {
-  for (const [label, value] of pairs) {
-    applyKvToListing(listing, label, value);
-  }
-}
-
-/** Map a single label-value pair to the appropriate listing field. */
 function applyKvToListing(listing: ParsedListing, rawLabel: string, rawValue: string): void {
   const label = rawLabel.toLowerCase().trim();
   const value = rawValue.trim();
-  if (!value || value.length === 0) return;
+  if (!value) return;
 
-  // Make / Brand
   if (/^(?:marka|brand|proizvod|proizvodjac|proizvođač|marka vozila)/.test(label)) {
-    if (!listing.make) listing.make = normalizeCarMake(value);
+    if (!listing.make) listing.make = normalizeMake(value);
   }
-
-  // Model
   if (/^(?:model|model vozila)/.test(label)) {
     if (!listing.model) listing.model = value;
   }
-
-  // Year
   if (/^(?:godišt|godist|godina|god\.|year|godina proizvodnje)/.test(label)) {
-    if (!listing.year) listing.year = parseNumber(value);
+    if (!listing.year) listing.year = parseNum(value);
   }
-
-  // Mileage
   if (/^(?:kilomet|km|predjeno|pređeno|kilometr|mileage|stanje km)/.test(label)) {
-    if (!listing.mileage) listing.mileage = parseNumber(value);
+    if (!listing.mileage) listing.mileage = parseNum(value);
   }
-
-  // Fuel
-  if (/^(?:gorivo|fuel|vrsta goriva|motor|pogonsko)/.test(label)) {
+  if (/^(?:gorivo|fuel|vrsta goriva|pogonsko)/.test(label)) {
     if (!listing.fuel) listing.fuel = matchFuel(value);
   }
-
-  // Transmission
   if (/^(?:mjenjač|mjenjac|menjač|menjac|transmis|transmission|tip menjača)/.test(label)) {
     if (!listing.transmission) listing.transmission = matchTransmission(value);
   }
-
-  // Body type
-  if (/^(?:karoserija|body|tip|oblik|vrsta vozila|karoserija vozila)/.test(label)) {
+  if (/^(?:karoserija|body|tip karoserije|oblik|vrsta vozila)/.test(label)) {
     if (!listing.body) listing.body = matchBody(value);
   }
-
-  // Power
-  if (/^(?:snaga|power|kw|kilovat|konjsk|ks|hp)/.test(label)) {
-    if (!listing.power) {
-      // Try to extract kW first, then HP and convert
-      const kwMatch = value.match(/(\d+)\s*kw/i);
-      const hpMatch = value.match(/(\d+)\s*(?:ks|hp|ps|cp)/i);
-      if (kwMatch) {
-        listing.power = Number(kwMatch[1]);
-      } else if (hpMatch) {
-        listing.power = Math.round(Number(hpMatch[1]) * 0.7355);
-      } else {
-        listing.power = parseNumber(value);
-      }
-    }
+  if (/^(?:snaga|power|kilovat|kw)/.test(label)) {
+    if (!listing.power) listing.power = parseNum(value);
   }
-
-  // Engine size
+  if (/^(?:konjsk|ks|hp|ps)/.test(label)) {
+    if (!listing.powerHP) listing.powerHP = parseNum(value);
+  }
   if (/^(?:kubikaž|kubikaz|ccm|zapremina|engine|obim motora|radna zapremina)/.test(label)) {
-    if (!listing.engineSize) listing.engineSize = parseNumber(value);
+    if (!listing.engineSize) listing.engineSize = parseEngineSize(value);
   }
-
-  // Color
   if (/^(?:boja|color|colour)/.test(label)) {
     if (!listing.color) listing.color = value;
   }
-
-  // Doors
   if (/^(?:vrata|doors|broj vrata)/.test(label)) {
-    if (!listing.doors) listing.doors = parseNumber(value);
+    if (!listing.doors) listing.doors = parseDoors(value);
   }
-
-  // City / Location
+  if (/^(?:sjedišt|sjedist|sjedista|seats|broj sjedišta|broj sjedista)/.test(label)) {
+    if (!listing.seats) listing.seats = parseNum(value);
+  }
+  if (/^(?:pogon|drive|privod)/.test(label)) {
+    if (!listing.driveType) listing.driveType = matchDrive(value);
+  }
   if (/^(?:grad|city|lokacija|location|mjesto|mesto)/.test(label)) {
     if (!listing.city) listing.city = value;
   }
-
-  // Price
   if (/^(?:cijena|cena|price|iznos)/.test(label)) {
     if (!listing.price) {
-      const { price, currency } = extractPriceFromText(value);
-      listing.price = price;
-      listing.currency = currency;
+      listing.price = parseNum(value);
+      if (/€|EUR/i.test(value)) listing.currency = 'EUR';
+      else if (/KM|BAM/i.test(value)) listing.currency = 'KM';
     }
   }
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+function applyJsonLd(listing: ParsedListing, ld: any): void {
+  if (!ld) return;
+  if (ld.name && !listing.title) listing.title = String(ld.name);
+  if (ld.description && !listing.description) listing.description = stripHtml(String(ld.description));
+
+  if (ld.image) {
+    const imgs = Array.isArray(ld.image) ? ld.image : [ld.image];
+    const urls = imgs.map((i: any) => typeof i === 'string' ? i : i?.url).filter(Boolean);
+    if (urls.length > 0) {
+      listing.photos = listing.photos ? [...new Set([...listing.photos, ...urls])] : urls;
+    }
+  }
+
+  if (ld.offers) {
+    const offer = Array.isArray(ld.offers) ? ld.offers[0] : ld.offers;
+    if (offer?.price && !listing.price) listing.price = parseNum(String(offer.price));
+    if (offer?.priceCurrency && !listing.currency) listing.currency = String(offer.priceCurrency);
+  }
+
+  if (ld.brand?.name && !listing.make) listing.make = normalizeMake(String(ld.brand.name));
+  if (ld.model && !listing.model) listing.model = String(ld.model);
+  if (ld.vehicleModelDate && !listing.year) listing.year = parseNum(String(ld.vehicleModelDate));
+  if (ld.mileageFromOdometer?.value && !listing.mileage) listing.mileage = parseNum(String(ld.mileageFromOdometer.value));
+  if (ld.fuelType && !listing.fuel) listing.fuel = matchFuel(String(ld.fuelType));
+  if (ld.vehicleTransmission && !listing.transmission) listing.transmission = matchTransmission(String(ld.vehicleTransmission));
+  if (ld.vehicleEngine?.engineDisplacement?.value && !listing.engineSize) {
+    listing.engineSize = parseEngineSize(String(ld.vehicleEngine.engineDisplacement.value));
+  }
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+/** Fallback: populate listing from og: meta tags. */
+function parseFromMetaTags(html: string, listing: ParsedListing): ParsedListing {
+  if (!listing.title) listing.title = getMetaContent(html, 'og:title') || undefined;
+  if (!listing.description) listing.description = getMetaContent(html, 'og:description') || undefined;
+
+  if (!listing.photos || listing.photos.length === 0) {
+    const ogImages = getAllOgImages(html);
+    if (ogImages.length > 0) listing.photos = ogImages;
+  }
+
+  // Guess make/model from title
+  if (!listing.make && listing.title) {
+    const guess = guessMakeModel(listing.title);
+    if (guess.make) listing.make = guess.make;
+    if (guess.model) listing.model = guess.model;
+  }
+
+  // Year from title/desc
+  if (!listing.year) {
+    listing.year = extractYear(listing.title || '') || extractYear(listing.description || '');
+  }
+
+  return listing;
+}
+
 // ---------------------------------------------------------------------------
-// Router - select parser by domain
+// Router — select parser by domain
 // ---------------------------------------------------------------------------
 
-function parseHtml(html: string, url: string): ParsedListing {
+function parseByDomain(html: string, url: string): ParsedListing {
   const domain = getDomainFromUrl(url);
 
-  let listing: ParsedListing;
-
   switch (domain) {
-    case 'olx.ba':
-      listing = parseOlx(html, url);
-      break;
     case 'autoplac.ba':
-      listing = parseAutoPlac(html, url);
-      break;
+      return parseAutoPlac(html, url);
     case 'autobum.ba':
-      listing = parseAutoBum(html, url);
-      break;
+      return parseAutoBum(html, url);
+    case 'olx.ba':
+      return parseOlx(html, url);
     case 'polovniautomobili.com':
-      listing = parsePolovniAutomobili(html, url);
-      break;
-    default:
-      listing = parseGeneric(html, url);
-      break;
+      return parsePolovniAutomobili(html, url);
+    default: {
+      const listing: ParsedListing = { importedFrom: domain || undefined, sourceUrl: url };
+      return parseFromMetaTags(html, listing);
+    }
   }
+}
 
-  // Final pass: if make/model still missing, try to guess from title
-  if (!listing.make || !listing.model) {
-    const titleText = listing.title || '';
-    const descText = listing.description || '';
-    const combined = `${titleText} ${descText}`;
-    const guess = guessMakeModelFromTitle(combined);
-    if (!listing.make && guess.make) listing.make = guess.make;
-    if (!listing.model && guess.model) listing.model = guess.model;
-  }
-
-  // If year still missing, try from title/description
-  if (!listing.year) {
-    listing.year =
-      extractYear(listing.title || '') || extractYear(listing.description || '');
-  }
-
-  // Remove undefined fields to keep response clean
+/** Clean the listing: remove undefined/null fields. */
+function cleanListing(listing: ParsedListing): Partial<ParsedListing> {
   return Object.fromEntries(
     Object.entries(listing).filter(([, v]) => v !== undefined && v !== null),
-  ) as ParsedListing;
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -758,7 +904,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { url } = body;
 
-    // Validate URL presence
     if (!url || typeof url !== 'string') {
       return NextResponse.json(
         { success: false, error: 'URL je obavezan.' },
@@ -766,7 +911,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate URL format
     const domain = getDomainFromUrl(url);
     if (!domain) {
       return NextResponse.json(
@@ -775,55 +919,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate supported domain
     if (!SUPPORTED_DOMAINS.includes(domain)) {
       return NextResponse.json(
         {
           success: false,
-          error: `Nepodržani sajt: ${domain}. Podržani sajtovi: ${SUPPORTED_DOMAINS.join(', ')}`,
+          error: `Nepodržani sajt: ${domain}. Podržani: ${SUPPORTED_DOMAINS.join(', ')}`,
         },
         { status: 400 },
       );
     }
 
-    // Fetch the page HTML
     let html: string;
     try {
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'bs,hr,sr,en;q=0.5',
-        },
-        signal: AbortSignal.timeout(15000),
-      });
-
-      if (!response.ok) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Greška prilikom dohvatanja stranice: HTTP ${response.status}`,
-          },
-          { status: 500 },
-        );
-      }
-
-      html = await response.text();
-    } catch (fetchError) {
-      const message =
-        fetchError instanceof Error ? fetchError.message : 'Nepoznata greška';
+      html = await fetchHtml(url);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Nepoznata greška';
       return NextResponse.json(
-        {
-          success: false,
-          error: `Greška prilikom dohvatanja stranice: ${message}`,
-        },
+        { success: false, error: `Greška prilikom dohvatanja stranice: ${msg}` },
         { status: 500 },
       );
     }
 
-    // Parse the HTML into listing data
-    const listing = parseHtml(html, url);
+    const listing = cleanListing(parseByDomain(html, url));
 
     return NextResponse.json({ success: true, listing });
   } catch (error) {
