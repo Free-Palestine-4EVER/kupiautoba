@@ -126,8 +126,20 @@ export default function ObjaviPage() {
   }, [currentStep]);
 
   const handlePublish = useCallback(async () => {
-    const isValid = await trigger();
-    if (!isValid || !user) return;
+    // Only validate critical fields, not everything
+    const criticalFields: (keyof ListingFormData)[] = ['make', 'model', 'year', 'price', 'description', 'contactName', 'contactPhone', 'contactCity'];
+    const isValid = await trigger(criticalFields);
+    if (!isValid || !user) {
+      console.error('Validation failed or no user', { isValid, user: !!user });
+      const errors = criticalFields.filter(f => {
+        const val = getValues(f);
+        return !val || val === '' || val === 0;
+      });
+      if (errors.length > 0) {
+        alert(`Molimo popunite obavezna polja: ${errors.join(', ')}`);
+      }
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -184,7 +196,8 @@ export default function ObjaviPage() {
       router.push(`/oglas/${listingId}`);
     } catch (err) {
       console.error('Error publishing listing:', err);
-      alert('Došlo je do greške pri objavljivanju oglasa. Pokušajte ponovo.');
+      const errorMsg = err instanceof Error ? err.message : 'Nepoznata greška';
+      alert(`Greška pri objavljivanju: ${errorMsg}`);
     } finally {
       setIsSubmitting(false);
     }

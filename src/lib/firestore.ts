@@ -44,8 +44,15 @@ function listingFromDoc(docSnap: DocumentSnapshot): Listing | null {
 // ==================== LISTINGS ====================
 
 export async function createListing(data: Omit<Listing, 'id' | 'createdAt' | 'updatedAt' | 'views' | 'favorites'>, userId: string): Promise<string> {
+  // Clean undefined values — Firestore rejects them
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value !== undefined && value !== null && !Number.isNaN(value)) {
+      cleaned[key] = value;
+    }
+  }
   const docData = {
-    ...data,
+    ...cleaned,
     userId,
     status: 'active',
     views: 0,
