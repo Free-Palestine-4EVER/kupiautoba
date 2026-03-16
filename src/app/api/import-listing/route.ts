@@ -27,6 +27,8 @@ interface ParsedListing {
   seats?: number;
   driveType?: DriveType;
   equipment?: string[];
+  registrationUntil?: string;
+  negotiable?: boolean;
   importedFrom?: string;
   sourceUrl?: string;
 }
@@ -223,9 +225,6 @@ async function fetchHtml(url: string): Promise<string> {
     signal: AbortSignal.timeout(15000),
   });
   if (!response.ok) {
-    if (response.status === 403 && url.includes('olx.ba')) {
-      throw new Error('OLX.ba koristi Cloudflare zaštitu koja blokira automatski uvoz. Molimo ručno kopirajte podatke sa OLX oglasa.');
-    }
     throw new Error(`HTTP ${response.status}`);
   }
   return response.text();
@@ -584,67 +583,130 @@ function parseAutoBum(html: string, url: string): ParsedListing {
 }
 
 // ---------------------------------------------------------------------------
-// OLX.BA parser — Cloudflare protected, best effort
+// OLX.BA parser — uses open API (no Cloudflare!)
 // ---------------------------------------------------------------------------
 
-function parseOlx(html: string, url: string): ParsedListing {
+/* eslint-disable @typescript-eslint/no-explicit-any */
+async function parseOlx(url: string): Promise<ParsedListing> {
   const listing: ParsedListing = { importedFrom: 'olx.ba', sourceUrl: url };
 
-  // OLX is often Cloudflare-protected. Extract what we can from meta tags.
-  listing.title = getMetaContent(html, 'og:title') || getMetaContent(html, 'title') || undefined;
-  listing.description = getMetaContent(html, 'og:description') || getMetaContent(html, 'description') || undefined;
+  // Extract article ID from URL
+  const idMatch = url.match(/artikal\/(\d+)/);
+  if (!idMatch) {
+    throw new Error('Neispravan OLX.ba link — nije pronađen ID oglasa.');
+  }
+  const articleId = idMatch[1];
 
-  // og:image
-  const ogImages = getAllOgImages(html);
-  if (ogImages.length > 0) {
-    listing.photos = ogImages;
+  // Call OLX API directly
+  const response = await fetch(`https://api.olx.ba/listings/${articleId}`, {
+    headers: { 'Accept': 'application/json' },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) {
+    throw new Error(`OLX API greška: HTTP ${response.status}`);
+  }
+  const data = await response.json();
+
+  // Title
+  listing.title = data.title || undefined;
+
+  // Price
+  if (data.price != null) {
+    listing.price = parseNum(data.price);
+    listing.currency = 'KM';
+  }
+  if (data.price_by_agreement) {
+    listing.negotiable = true;
   }
 
-  // Try to extract price from meta or body
-  const priceFromMeta = getMetaContent(html, 'product:price:amount');
-  if (priceFromMeta) {
-    listing.price = parseNum(priceFromMeta);
-    const currency = getMetaContent(html, 'product:price:currency');
-    listing.currency = currency || 'KM';
+  // Make & model
+  if (data.brand?.name) listing.make = normalizeMake(data.brand.name);
+  if (data.model?.name) listing.model = data.model.name;
+
+  // Images — CDN URLs, use directly
+  if (Array.isArray(data.images) && data.images.length > 0) {
+    listing.photos = data.images.filter((img: string) => typeof img === 'string' && img.length > 0);
   }
 
-  // Try to parse price from body
-  if (!listing.price) {
-    const priceMatch = html.match(/class=["'][^"']*price[^"']*["'][^>]*>([^<]*)/i);
-    if (priceMatch) {
-      const text = priceMatch[1].trim();
-      listing.price = parseNum(text);
-      if (/€|EUR/i.test(text)) listing.currency = 'EUR';
-      else if (/KM|BAM/i.test(text)) listing.currency = 'KM';
+  // Description — strip HTML
+  if (data.additional?.description) {
+    listing.description = stripHtml(decodeHtmlEntities(data.additional.description));
+  }
+
+  // City
+  if (Array.isArray(data.cities) && data.cities.length > 0 && data.cities[0].name) {
+    listing.city = data.cities[0].name;
+  }
+
+  // Build attribute lookup by attr_code
+  const attrMap = new Map<string, any>();
+  if (Array.isArray(data.attributes)) {
+    for (const attr of data.attributes) {
+      if (attr.attr_code) attrMap.set(attr.attr_code, attr);
     }
   }
 
-  // Try to extract specs from HTML body (key-value pairs)
-  const kvPairs = extractKeyValuePairs(html);
-  for (const [label, value] of kvPairs) {
-    applyKvToListing(listing, label, value);
+  // Map attributes
+  const getAttr = (code: string) => attrMap.get(code)?.value;
+
+  const year = getAttr('godiste');
+  if (year != null) listing.year = parseNum(year);
+
+  const fuel = getAttr('gorivo');
+  if (fuel) listing.fuel = matchFuel(String(fuel));
+
+  const transmission = getAttr('transmisija');
+  if (transmission) listing.transmission = matchTransmission(String(transmission));
+
+  const mileage = getAttr('kilometra-a');
+  if (mileage != null) listing.mileage = parseNum(mileage);
+
+  const engineSize = getAttr('kubikaza');
+  if (engineSize != null) {
+    const n = typeof engineSize === 'number' ? engineSize : parseFloat(String(engineSize));
+    if (!isNaN(n)) {
+      listing.engineSize = n < 10 ? Math.round(n * 1000) : Math.round(n);
+    }
   }
 
-  // City from location element
-  if (!listing.city) {
-    const locMatch = html.match(/class=["'][^"']*(?:location|lokacija)[^"']*["'][^>]*>([^<]*)/i);
-    if (locMatch) listing.city = locMatch[1].trim();
-  }
+  const kw = getAttr('kilovata-kw');
+  if (kw != null) listing.power = parseNum(kw);
 
-  // Guess make/model from title
-  if (!listing.make && listing.title) {
-    const guess = guessMakeModel(listing.title);
-    if (guess.make) listing.make = guess.make;
-    if (guess.model) listing.model = guess.model;
-  }
+  const hp = getAttr('konjskih-snaga');
+  if (hp != null) listing.powerHP = parseNum(hp);
 
-  // Year from title/description
-  if (!listing.year) {
-    listing.year = extractYear(listing.title || '') || extractYear(listing.description || '');
+  const doors = getAttr('broj-vrata');
+  if (doors != null) listing.doors = parseDoors(doors);
+
+  const body = getAttr('tip');
+  if (body) listing.body = matchBody(String(body));
+
+  const drive = getAttr('pogon');
+  if (drive) listing.driveType = matchDrive(String(drive));
+
+  const color = getAttr('boja');
+  if (color) listing.color = String(color);
+
+  const seats = getAttr('sjedecih-mjesta');
+  if (seats != null) listing.seats = parseNum(seats);
+
+  const regUntil = getAttr('registrovan-do');
+  if (regUntil) listing.registrationUntil = String(regUntil);
+
+  // Equipment — attributes where value === "true"
+  const equipment: string[] = [];
+  if (Array.isArray(data.attributes)) {
+    for (const attr of data.attributes) {
+      if (attr.value === 'true' && attr.name) {
+        equipment.push(attr.name);
+      }
+    }
   }
+  if (equipment.length > 0) listing.equipment = equipment;
 
   return listing;
 }
+/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // ---------------------------------------------------------------------------
 // POLOVNIAUTOMOBILI.COM parser — structured tables + meta + JSON-LD
@@ -877,8 +939,6 @@ function parseByDomain(html: string, url: string): ParsedListing {
       return parseAutoPlac(html, url);
     case 'autobum.ba':
       return parseAutoBum(html, url);
-    case 'olx.ba':
-      return parseOlx(html, url);
     case 'polovniautomobili.com':
       return parsePolovniAutomobili(html, url);
     default: {
@@ -929,18 +989,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let html: string;
-    try {
-      html = await fetchHtml(url);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Nepoznata greška';
-      return NextResponse.json(
-        { success: false, error: `Greška prilikom dohvatanja stranice: ${msg}` },
-        { status: 500 },
-      );
-    }
+    let listing: Partial<ParsedListing>;
 
-    const listing = cleanListing(parseByDomain(html, url));
+    if (domain === 'olx.ba') {
+      // OLX.ba — use their open API directly (no Cloudflare!)
+      try {
+        listing = cleanListing(await parseOlx(url));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Nepoznata greška';
+        return NextResponse.json(
+          { success: false, error: msg },
+          { status: 500 },
+        );
+      }
+    } else {
+      // All other sites — fetch HTML and parse
+      let html: string;
+      try {
+        html = await fetchHtml(url);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Nepoznata greška';
+        return NextResponse.json(
+          { success: false, error: `Greška prilikom dohvatanja stranice: ${msg}` },
+          { status: 500 },
+        );
+      }
+      listing = cleanListing(parseByDomain(html, url));
+    }
 
     return NextResponse.json({ success: true, listing });
   } catch (error) {

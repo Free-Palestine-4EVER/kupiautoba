@@ -40,24 +40,26 @@ export default function ImportSection({ onImportSuccess, onJumpToStep }: ImportS
         body: JSON.stringify({ url: url.trim() }),
       });
 
-      if (!response.ok) {
-        throw new Error("Greska prilikom uvoza oglasa");
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Greška prilikom uvoza oglasa");
       }
 
-      const data = await response.json();
-      if (data.success && data.listing) {
+      if (data.listing) {
         setStatus("success");
-        setMessage("Oglas je uspjesno uvezen! Provjerite i dopunite podatke.");
+        setMessage("Oglas je uspješno uvezen! Provjerite i dopunite podatke.");
         onImportSuccess?.(data.listing);
-        // Jump to vehicle info step so user sees populated fields
         setTimeout(() => onJumpToStep?.(1), 500);
       } else {
-        throw new Error(data.error || "Nepoznata greška");
+        throw new Error("Nepoznata greška");
       }
-    } catch {
+    } catch (err) {
       setStatus("error");
       setMessage(
-        "Nije moguce uvesti oglas sa ovog linka. Provjerite link i pokusajte ponovo."
+        err instanceof Error
+          ? err.message
+          : "Nije moguće uvesti oglas sa ovog linka. Provjerite link i pokušajte ponovo."
       );
     } finally {
       setIsLoading(false);
