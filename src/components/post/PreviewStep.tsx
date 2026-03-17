@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useEffect, useState } from "react";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import type { ListingFormData } from "@/app/objavi/page";
 import {
@@ -201,11 +202,13 @@ export default function PreviewStep({
                   key={index}
                   className="relative aspect-[4/3] rounded-lg overflow-hidden bg-gray-100 dark:bg-navy-400"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
+                  <Image
                     src={preview}
                     alt={`Foto ${index + 1}`}
-                    className="w-full h-full object-cover"
+                    fill
+                    className="object-cover"
+                    unoptimized
+                    sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 16vw"
                   />
                   {index === 0 && (
                     <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase bg-accent-500 text-white">

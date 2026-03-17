@@ -12,7 +12,23 @@ const nextConfig = {
       },
       {
         protocol: "https",
+        hostname: "kupiautoba-e7eb5.firebasestorage.app",
+      },
+      {
+        protocol: "https",
         hostname: "images.unsplash.com",
+      },
+      {
+        protocol: "https",
+        hostname: "cdn.autobum.ba",
+      },
+      {
+        protocol: "https",
+        hostname: "cdn.autoplac.ba",
+      },
+      {
+        protocol: "https",
+        hostname: "*.olx.ba",
       },
     ],
   },

@@ -14,6 +14,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://www.kupiauto.ba'),
   title: "KupiAuto.ba - Pronadi svoj auto iz snova",
   description:
     "Najveci online marketplace za kupovinu i prodaju automobila u Bosni i Hercegovini. Pregledajte hiljade oglasa novih i polovnih vozila.",
@@ -26,6 +27,14 @@ export const metadata: Metadata = {
     "novi automobili",
     "KupiAuto",
   ],
+  manifest: '/manifest.json',
+  alternates: {
+    canonical: 'https://www.kupiauto.ba',
+  },
+  icons: {
+    icon: '/favicon.ico',
+    apple: '/icon-192.png',
+  },
   openGraph: {
     title: "KupiAuto.ba - Pronadi svoj auto iz snova",
     description:
@@ -33,6 +42,11 @@ export const metadata: Metadata = {
     siteName: "KupiAuto.ba",
     locale: "bs_BA",
     type: "website",
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'KupiAuto.ba - Pronadi svoj auto iz snova',
+    description: 'Najveci online marketplace za kupovinu i prodaju automobila u Bosni i Hercegovini.',
   },
 };
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Eye,
   Heart,
@@ -17,6 +18,7 @@ import {
   Star,
   BarChart3,
   Loader2,
+  MessageCircle,
 } from "lucide-react";
 import { formatPrice, cn } from "@/lib/utils";
 import { Listing, ListingStatus } from "@/types";
@@ -146,6 +148,14 @@ export default function DashboardPage() {
       color: "text-rose-500",
       bgColor: "bg-rose-50 dark:bg-rose-500/10",
     },
+    {
+      label: "Poruke",
+      value: "—",
+      icon: MessageCircle,
+      color: "text-violet-500",
+      bgColor: "bg-violet-50 dark:bg-violet-500/10",
+      href: "/dashboard/poruke",
+    },
   ];
 
   const getListingsForTab = (): Listing[] => {
@@ -185,14 +195,16 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {stats.map((stat) => {
           const Icon = stat.icon;
-          return (
-            <div
-              key={stat.label}
-              className="bg-[var(--card)] rounded-2xl border border-[var(--border)] p-5 flex items-center gap-4"
-            >
+          const statHref = (stat as { href?: string }).href;
+          const cardClassName = cn(
+            "bg-[var(--card)] rounded-2xl border border-[var(--border)] p-5 flex items-center gap-4",
+            statHref && "hover:border-accent-200 dark:hover:border-accent-500/30 transition-colors cursor-pointer"
+          );
+          const cardContent = (
+            <>
               <div
                 className={cn(
                   "w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0",
@@ -209,6 +221,15 @@ export default function DashboardPage() {
                   {stat.label}
                 </p>
               </div>
+            </>
+          );
+          return statHref ? (
+            <Link key={stat.label} href={statHref} className={cardClassName}>
+              {cardContent}
+            </Link>
+          ) : (
+            <div key={stat.label} className={cardClassName}>
+              {cardContent}
             </div>
           );
         })}
@@ -271,12 +292,15 @@ export default function DashboardPage() {
               >
                 {/* Thumbnail */}
                 <div className="sm:w-48 md:w-56 flex-shrink-0">
-                  <div className="aspect-[16/10] rounded-lg bg-gradient-to-br from-navy-100 via-navy-200 to-accent-200 dark:from-navy-600 dark:via-navy-500 dark:to-accent-900 flex items-center justify-center overflow-hidden">
+                  <div className="relative aspect-[16/10] rounded-lg bg-gradient-to-br from-navy-100 via-navy-200 to-accent-200 dark:from-navy-600 dark:via-navy-500 dark:to-accent-900 flex items-center justify-center overflow-hidden">
                     {listing.photos && listing.photos.length > 0 ? (
-                      <img
+                      <Image
                         src={listing.photos[0]}
                         alt={listing.title}
-                        className="w-full h-full object-cover"
+                        fill
+                        className="object-cover"
+                        unoptimized
+                        sizes="(max-width: 640px) 100vw, 224px"
                       />
                     ) : (
                       <Car className="w-10 h-10 text-navy-300/60 dark:text-navy-300/40" />

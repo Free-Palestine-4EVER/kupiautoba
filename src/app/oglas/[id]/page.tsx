@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { motion } from "framer-motion";
 import {
   ChevronRight,
   Heart,
@@ -23,9 +24,13 @@ import {
   X,
   Send,
   Loader2,
+  Settings2,
+  FileText,
+  ListChecks,
+  BarChart3,
 } from "lucide-react";
 import type { Listing } from "@/types";
-import { formatPrice, formatMileage, timeAgo } from "@/lib/utils";
+import { cn, formatPrice, formatMileage, timeAgo } from "@/lib/utils";
 import {
   getListing,
   incrementViews,
@@ -235,6 +240,96 @@ function MessageModal({
               </button>
             </div>
           </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const detailTabs = [
+  { key: "specs", label: "Specifikacije", icon: Settings2 },
+  { key: "description", label: "Opis", icon: FileText },
+  { key: "equipment", label: "Oprema", icon: ListChecks },
+  { key: "price-history", label: "Historija cijena", icon: BarChart3 },
+] as const;
+
+type DetailTabKey = (typeof detailTabs)[number]["key"];
+
+function DetailTabs({ listing }: { listing: Listing }) {
+  const [activeTab, setActiveTab] = useState<DetailTabKey>("specs");
+
+  return (
+    <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] overflow-hidden">
+      {/* Tab Headers */}
+      <div className="border-b border-[var(--border)] overflow-x-auto scrollbar-hide">
+        <div className="flex min-w-max">
+          {detailTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={cn(
+                  "flex items-center gap-2 px-5 py-4 text-sm font-medium transition-all duration-200 relative whitespace-nowrap",
+                  isActive
+                    ? "text-accent-500"
+                    : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                )}
+              >
+                <Icon className="w-4 h-4" />
+                {tab.label}
+                {isActive && (
+                  <motion.span
+                    layoutId="detail-tab-indicator"
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent-500 rounded-full"
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Tab Content */}
+      <div className="p-5 sm:p-6">
+        {activeTab === "specs" && <SpecsGrid listing={listing} />}
+
+        {activeTab === "description" && (
+          <p className="text-[var(--foreground)] leading-relaxed whitespace-pre-line">
+            {listing.description || "Nema opisa."}
+          </p>
+        )}
+
+        {activeTab === "equipment" && (
+          <EquipmentList equipment={listing.equipment} />
+        )}
+
+        {activeTab === "price-history" && (
+          <div className="text-center py-10">
+            <div className="w-16 h-16 rounded-2xl bg-accent-50 dark:bg-accent-500/10 flex items-center justify-center mx-auto mb-4">
+              <BarChart3 className="w-8 h-8 text-accent-500 opacity-60" />
+            </div>
+            <h3 className="text-base font-bold text-[var(--foreground)] mb-2">
+              Historija cijena — uskoro
+            </h3>
+            <p className="text-sm text-[var(--muted-foreground)] max-w-sm mx-auto">
+              Pratite promjene cijena ovog oglasa tokom vremena. Ova funkcija ce biti dostupna uskoro.
+            </p>
+            <div className="mt-6 flex items-center justify-center gap-6 opacity-40">
+              {[40, 38, 35, 33, 30].map((h, i) => (
+                <div key={i} className="flex flex-col items-center gap-1">
+                  <div
+                    className="w-8 bg-gradient-to-t from-accent-500 to-accent-400 rounded-t-md"
+                    style={{ height: `${h * 2}px` }}
+                  />
+                  <span className="text-[10px] text-[var(--muted-foreground)]">
+                    {["Jan", "Feb", "Mar", "Apr", "Maj"][i]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -519,38 +614,8 @@ export default function ListingDetailPage({ params }: PageProps) {
               </div>
             </div>
 
-            {/* Specs Grid */}
-            <section>
-              <h2 className="text-xl font-bold text-[var(--foreground)] mb-4 flex items-center gap-2">
-                <span className="w-1.5 h-6 bg-accent-500 rounded-full" />
-                Tehnicke specifikacije
-              </h2>
-              <SpecsGrid listing={listing} />
-            </section>
-
-            {/* Description */}
-            <section>
-              <h2 className="text-xl font-bold text-[var(--foreground)] mb-4 flex items-center gap-2">
-                <span className="w-1.5 h-6 bg-accent-500 rounded-full" />
-                Opis
-              </h2>
-              <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] p-6">
-                <p className="text-[var(--foreground)] leading-relaxed whitespace-pre-line">
-                  {listing.description}
-                </p>
-              </div>
-            </section>
-
-            {/* Equipment */}
-            <section>
-              <h2 className="text-xl font-bold text-[var(--foreground)] mb-4 flex items-center gap-2">
-                <span className="w-1.5 h-6 bg-accent-500 rounded-full" />
-                Oprema
-              </h2>
-              <div className="bg-[var(--card)] rounded-2xl border border-[var(--border)] p-6">
-                <EquipmentList equipment={listing.equipment} />
-              </div>
-            </section>
+            {/* Tabbed Content */}
+            <DetailTabs listing={listing} />
           </div>
 
           {/* Right Sidebar */}

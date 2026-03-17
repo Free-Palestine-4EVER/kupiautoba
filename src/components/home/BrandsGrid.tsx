@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 const brands = [
@@ -99,11 +100,12 @@ export default function BrandsGrid() {
                     "transition-all duration-300"
                   )}
                 >
-                  <img
+                  <Image
                     src={brand.logo}
                     alt={brand.name}
+                    width={48}
+                    height={48}
                     className="w-full h-full object-contain"
-                    loading="lazy"
                   />
                 </div>
                 <span className="text-xs font-medium text-[var(--foreground)] text-center leading-tight">

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { motion, AnimatePresence } from "framer-motion";
@@ -24,6 +25,7 @@ import {
   Settings,
   LogOut,
   ChevronDown,
+  Globe,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
@@ -136,6 +138,15 @@ export default function Navbar() {
             </div>
 
             <div className="hidden lg:flex items-center gap-2">
+              {/* Language switcher placeholder */}
+              <button
+                className="relative p-2.5 rounded-xl text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] transition-all duration-200"
+                aria-label="Jezik"
+                title="Bosanski"
+              >
+                <Globe className="w-[18px] h-[18px]" />
+              </button>
+
               {mounted && (
                 <button
                   onClick={toggleTheme}
@@ -164,7 +175,7 @@ export default function Navbar() {
                     className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-[var(--foreground)] hover:bg-[var(--muted)] rounded-xl transition-all duration-200"
                   >
                     {user.photoURL ? (
-                      <img src={user.photoURL} alt="" className="w-7 h-7 rounded-full object-cover" />
+                      <Image src={user.photoURL} alt="" width={28} height={28} className="w-7 h-7 rounded-full object-cover" unoptimized />
                     ) : (
                       <div className="w-7 h-7 rounded-full bg-accent-500 text-white text-xs font-bold flex items-center justify-center">{initials}</div>
                     )}
@@ -266,7 +277,7 @@ export default function Navbar() {
                 <div className="p-4 border-b border-[var(--border)]">
                   <div className="flex items-center gap-3">
                     {user.photoURL ? (
-                      <img src={user.photoURL} alt="" className="w-10 h-10 rounded-full object-cover" />
+                      <Image src={user.photoURL} alt="" width={40} height={40} className="w-10 h-10 rounded-full object-cover" unoptimized />
                     ) : (
                       <div className="w-10 h-10 rounded-full bg-accent-500 text-white text-sm font-bold flex items-center justify-center">{initials}</div>
                     )}

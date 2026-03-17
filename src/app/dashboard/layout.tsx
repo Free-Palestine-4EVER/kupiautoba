@@ -15,13 +15,14 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 
 const sidebarLinks = [
   { href: "/dashboard", label: "Moji oglasi", icon: Car },
   { href: "/dashboard/poruke", label: "Poruke", icon: MessageCircle },
   { href: "/dashboard/sacuvano", label: "Sacuvano", icon: Heart },
-  { href: "/dashboard/profil", label: "Profil", icon: User },
   { href: "/dashboard/krediti", label: "Krediti", icon: CreditCard },
+  { href: "/dashboard/profil", label: "Profil", icon: User },
 ];
 
 export default function DashboardLayout({
@@ -31,6 +32,15 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user } = useAuth();
+
+  const displayName = user?.displayName || user?.email?.split("@")[0] || "Korisnik";
+  const initials = displayName
+    .split(" ")
+    .map((n: string) => n.charAt(0))
+    .join("")
+    .toUpperCase()
+    .slice(0, 2) || "K";
 
   const isActive = (href: string) => {
     if (href === "/dashboard") return pathname === "/dashboard";
@@ -87,14 +97,14 @@ export default function DashboardLayout({
         <div className="p-5 border-b border-[var(--border)]">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-full bg-gradient-to-br from-accent-500 to-accent-700 flex items-center justify-center text-white font-bold text-base shadow-lg shadow-accent-500/20">
-              AH
+              {initials}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-[var(--foreground)] truncate">
-                Amer Hodzic
+                {displayName}
               </p>
               <p className="text-xs text-[var(--muted-foreground)] truncate">
-                amer.hodzic@email.com
+                {user?.email || ""}
               </p>
             </div>
           </div>

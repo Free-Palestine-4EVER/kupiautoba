@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Camera,
@@ -228,11 +229,13 @@ export default function PhotoUploadStep({
                 transition={{ duration: 0.2 }}
                 className="relative group aspect-[4/3] rounded-xl overflow-hidden bg-gray-100 dark:bg-navy-400 border border-[var(--border)]"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <Image
                   src={preview}
                   alt={`Fotografija ${index + 1}`}
-                  className="w-full h-full object-cover"
+                  fill
+                  className="object-cover"
+                  unoptimized
+                  sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
                 />
 
                 {/* Cover badge for first photo */}

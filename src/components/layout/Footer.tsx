@@ -31,17 +31,18 @@ const footerLinks = {
     links: [
       { label: "O nama", href: "/o-nama" },
       { label: "Kontakt", href: "/kontakt" },
+      { label: "Blog", href: "/blog" },
       { label: "Postani salon", href: "/postani-salon" },
-      { label: "Uslovi korištenja", href: "/uslovi-koristenja" },
-      { label: "Politika privatnosti", href: "/politika-privatnosti" },
+      { label: "Cjenovnik", href: "/cjenovnik" },
     ],
   },
   podrska: {
     title: "Podrška",
     links: [
       { label: "FAQ", href: "/faq" },
-      { label: "Prijava", href: "/prijava" },
-      { label: "Registracija", href: "/registracija" },
+      { label: "Sigurnost", href: "/sigurnost" },
+      { label: "Uslovi korištenja", href: "/uslovi-koristenja" },
+      { label: "Politika privatnosti", href: "/politika-privatnosti" },
     ],
   },
 };
